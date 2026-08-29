@@ -2,7 +2,7 @@ import { useState } from 'react';
 import AppShell from './components/AppShell';
 import RequestEditor from './components/RequestEditor';
 import ResponsePanel from './components/ResponsePanel';
-import type { ApiRequest, HttpMethod } from './types/request';
+import type { ApiRequest, HttpMethod, KeyValueEntry } from './types/request';
 
 interface ResponseData {
   status: number;
@@ -32,6 +32,10 @@ function App() {
 
   const setUrl = (url: string) => {
     setRequest((prev) => ({ ...prev, url }));
+  };
+
+  const setQueryParams = (queryParams: KeyValueEntry[]) => {
+    setRequest((prev) => ({ ...prev, queryParams }));
   };
 
   const handleSend = async () => {
@@ -108,6 +112,8 @@ function App() {
             setMethod={setMethod}
             url={request.url}
             setUrl={setUrl}
+            queryParams={request.queryParams}
+            setQueryParams={setQueryParams}
             onSend={handleSend}
             isSending={isSending}
           />

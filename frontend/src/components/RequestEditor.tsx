@@ -1,26 +1,68 @@
 import { useState } from 'react';
-import type { HttpMethod } from '../types/request';
+import type { HttpMethod, KeyValueEntry } from '../types/request';
 
 interface RequestEditorProps {
   method: HttpMethod;
   setMethod: (method: HttpMethod) => void;
   url: string;
   setUrl: (url: string) => void;
+  queryParams: KeyValueEntry[];
+  setQueryParams: (queryParams: KeyValueEntry[]) => void;
   onSend: () => void;
   isSending: boolean;
 }
+
+const generateId = () => {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return Math.random().toString(36).substring(2, 9) + Date.now().toString(36);
+};
 
 export default function RequestEditor({
   method,
   setMethod,
   url,
   setUrl,
+  queryParams,
+  setQueryParams,
   onSend,
   isSending,
 }: RequestEditorProps) {
   const [activeTab, setActiveTab] = useState<'params' | 'headers' | 'body' | 'auth'>('params');
 
   const methods = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'];
+
+  const handleAddParam = () => {
+    const newParam: KeyValueEntry = {
+      id: generateId(),
+      key: '',
+      value: '',
+      enabled: true,
+      description: '',
+    };
+    setQueryParams([...queryParams, newParam]);
+  };
+
+  const handleToggleParam = (id: string, enabled: boolean) => {
+    setQueryParams(
+      queryParams.map((param) =>
+        param.id === id ? { ...param, enabled } : param
+      )
+    );
+  };
+
+  const handleUpdateParam = (id: string, field: 'key' | 'value' | 'description', value: string) => {
+    setQueryParams(
+      queryParams.map((param) =>
+        param.id === id ? { ...param, [field]: value } : param
+      )
+    );
+  };
+
+  const handleDeleteParam = (id: string) => {
+    setQueryParams(queryParams.filter((param) => param.id !== id));
+  };
 
   const getMethodColor = (m: string) => {
     switch (m) {
@@ -113,17 +155,104 @@ export default function RequestEditor({
         {/* Tab content placeholder boxes */}
         <div className="py-4 min-h-[140px] text-xs">
           {activeTab === 'params' && (
-            <div className="space-y-2">
-              <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Query Parameters</span>
-              <div className="grid grid-cols-12 gap-2 border border-slate-800/80 rounded-lg p-2 bg-slate-950/40">
-                <div className="col-span-4 font-mono font-bold text-slate-450 px-2 py-1">Key</div>
-                <div className="col-span-4 font-mono font-bold text-slate-450 px-2 py-1">Value</div>
-                <div className="col-span-4 font-mono font-bold text-slate-450 px-2 py-1">Description</div>
-                
-                <input type="text" placeholder="e.g. limit" className="col-span-4 bg-slate-950 border border-slate-850 rounded px-2 py-1 focus:outline-none focus:border-slate-700 text-slate-350" />
-                <input type="text" placeholder="e.g. 10" className="col-span-4 bg-slate-950 border border-slate-850 rounded px-2 py-1 focus:outline-none focus:border-slate-700 text-slate-350" />
-                <input type="text" placeholder="e.g. Max items" className="col-span-4 bg-slate-950 border border-slate-850 rounded px-2 py-1 focus:outline-none focus:border-slate-700 text-slate-350" />
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Query Parameters</span>
+                <button
+                  type="button"
+                  onClick={handleAddParam}
+                  className="text-xs text-indigo-400 hover:text-indigo-300 font-semibold flex items-center space-x-1.5 transition duration-150 active:scale-95"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
+                  </svg>
+                  <span>Add Parameter</span>
+                </button>
               </div>
+
+              {queryParams.length === 0 ? (
+                <div className="text-center py-8 border border-dashed border-slate-800 rounded-lg text-slate-500 select-none">
+                  No query parameters defined. Click "Add Parameter" to start.
+                </div>
+              ) : (
+                <div className="border border-slate-800/80 rounded-lg overflow-hidden bg-slate-950/20">
+                  <div className="grid grid-cols-12 gap-2 border-b border-slate-850 p-2 bg-slate-900/20 text-[10px] font-bold uppercase tracking-wider text-slate-450 font-mono">
+                    <div className="col-span-1 text-center">Active</div>
+                    <div className="col-span-3">Key</div>
+                    <div className="col-span-3">Value</div>
+                    <div className="col-span-4">Description</div>
+                    <div className="col-span-1 text-center">Delete</div>
+                  </div>
+                  
+                  <div className="divide-y divide-slate-850/80">
+                    {queryParams.map((param) => (
+                      <div
+                        key={param.id}
+                        className={`grid grid-cols-12 gap-2 items-center p-2 hover:bg-slate-900/10 transition duration-150 ${
+                          !param.enabled ? 'opacity-55' : ''
+                        }`}
+                      >
+                        {/* Enabled Switch */}
+                        <div className="col-span-1 flex items-center justify-center">
+                          <input
+                            type="checkbox"
+                            checked={param.enabled}
+                            onChange={(e) => handleToggleParam(param.id, e.target.checked)}
+                            className="w-3.5 h-3.5 rounded border-slate-800 text-indigo-600 bg-slate-950 focus:ring-indigo-500/30 cursor-pointer focus:ring-offset-0 focus:outline-none"
+                          />
+                        </div>
+                        
+                        {/* Key Input */}
+                        <div className="col-span-3">
+                          <input
+                            type="text"
+                            value={param.key}
+                            onChange={(e) => handleUpdateParam(param.id, 'key', e.target.value)}
+                            placeholder="Key"
+                            className="w-full bg-slate-950 border border-slate-850/85 rounded px-2 py-1 text-slate-300 placeholder-slate-700 font-mono text-xs focus:outline-none focus:border-indigo-500 transition"
+                          />
+                        </div>
+                        
+                        {/* Value Input */}
+                        <div className="col-span-3">
+                          <input
+                            type="text"
+                            value={param.value}
+                            onChange={(e) => handleUpdateParam(param.id, 'value', e.target.value)}
+                            placeholder="Value"
+                            className="w-full bg-slate-950 border border-slate-850/85 rounded px-2 py-1 text-slate-300 placeholder-slate-700 font-mono text-xs focus:outline-none focus:border-indigo-500 transition"
+                          />
+                        </div>
+                        
+                        {/* Description Input */}
+                        <div className="col-span-4">
+                          <input
+                            type="text"
+                            value={param.description || ''}
+                            onChange={(e) => handleUpdateParam(param.id, 'description', e.target.value)}
+                            placeholder="Description"
+                            className="w-full bg-slate-950 border border-slate-850/85 rounded px-2 py-1 text-slate-350 placeholder-slate-700 font-mono text-xs focus:outline-none focus:border-indigo-500 transition"
+                          />
+                        </div>
+                        
+                        {/* Delete Action */}
+                        <div className="col-span-1 flex items-center justify-center">
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteParam(param.id)}
+                            className="text-slate-500 hover:text-rose-400 p-1 rounded transition duration-150 hover:bg-rose-950/20 active:scale-95"
+                            title="Delete Parameter"
+                          >
+                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
