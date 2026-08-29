@@ -2,6 +2,7 @@ import { useState } from 'react';
 import AppShell from './components/AppShell';
 import RequestEditor from './components/RequestEditor';
 import ResponsePanel from './components/ResponsePanel';
+import type { ApiRequest, HttpMethod } from './types/request';
 
 interface ResponseData {
   status: number;
@@ -12,10 +13,26 @@ interface ResponseData {
 }
 
 function App() {
-  const [method, setMethod] = useState('GET');
-  const [url, setUrl] = useState('http://localhost:3001/api/health');
+  const [request, setRequest] = useState<ApiRequest>({
+    method: 'GET',
+    url: 'http://localhost:3001/api/health',
+    queryParams: [],
+    headers: [],
+    body: '',
+    auth: {
+      type: 'none'
+    }
+  });
   const [isSending, setIsSending] = useState(false);
   const [response, setResponse] = useState<ResponseData | null>(null);
+
+  const setMethod = (method: HttpMethod) => {
+    setRequest((prev) => ({ ...prev, method }));
+  };
+
+  const setUrl = (url: string) => {
+    setRequest((prev) => ({ ...prev, url }));
+  };
 
   const handleSend = async () => {
     setIsSending(true);
@@ -23,7 +40,7 @@ function App() {
     const startTime = performance.now();
     try {
       // In local dev, if requesting the health endpoint, we run a real API call!
-      if (url.includes('/api/health')) {
+      if (request.url.includes('/api/health')) {
         const res = await fetch('http://localhost:3001/api/health');
         const text = await res.text();
         const endTime = performance.now();
@@ -39,8 +56,8 @@ function App() {
         await new Promise((resolve) => setTimeout(resolve, 600));
         const mockBody = JSON.stringify({
           message: "APIForge Mock Response",
-          method: method,
-          url: url,
+          method: request.method,
+          url: request.url,
           tip: "Phase 1 implements layout, shell, and tab controls. Real execution of remote APIs will be added in Phase 2. Try sending to http://localhost:3001/api/health for a real backend hit!"
         });
         const endTime = performance.now();
@@ -87,9 +104,9 @@ function App() {
         {/* Workspace Panels (Request Editor + Response Inspector) */}
         <div className="flex-1 flex flex-col space-y-4 overflow-hidden min-h-0">
           <RequestEditor
-            method={method}
+            method={request.method}
             setMethod={setMethod}
-            url={url}
+            url={request.url}
             setUrl={setUrl}
             onSend={handleSend}
             isSending={isSending}

@@ -1,8 +1,9 @@
 import { useState } from 'react';
+import type { HttpMethod } from '../types/request';
 
 interface RequestEditorProps {
-  method: string;
-  setMethod: (method: string) => void;
+  method: HttpMethod;
+  setMethod: (method: HttpMethod) => void;
   url: string;
   setUrl: (url: string) => void;
   onSend: () => void;
@@ -40,7 +41,7 @@ export default function RequestEditor({
         <div className="relative">
           <select
             value={method}
-            onChange={(e) => setMethod(e.target.value)}
+            onChange={(e) => setMethod(e.target.value as HttpMethod)}
             className={`bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs font-bold font-mono focus:outline-none focus:border-indigo-500 cursor-pointer appearance-none pr-8 ${getMethodColor(method)}`}
           >
             {methods.map((m) => (
