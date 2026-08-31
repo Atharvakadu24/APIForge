@@ -26,11 +26,14 @@ export interface RequestAuth {
   apiKey?: ApiKeyAuth;
 }
 
+export type RequestBodyType = 'none' | 'json' | 'text';
+
 export interface ApiRequest {
   method: HttpMethod;
   url: string;
   queryParams: KeyValueEntry[];
   headers: KeyValueEntry[];
+  bodyType: RequestBodyType;
   body: string;
   auth: RequestAuth;
 }

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import AppShell from './components/AppShell';
 import RequestEditor from './components/RequestEditor';
 import ResponsePanel from './components/ResponsePanel';
-import type { ApiRequest, HttpMethod, KeyValueEntry } from './types/request';
+import type { ApiRequest, HttpMethod, KeyValueEntry, RequestAuth, RequestBodyType } from './types/request';
 
 interface ResponseData {
   status: number;
@@ -17,11 +17,15 @@ function App() {
     method: 'GET',
     url: 'http://localhost:3001/api/health',
     queryParams: [],
-    headers: [],
+    headers: [
+      { id: 'header-content-type', key: 'Content-Type', value: 'application/json', enabled: true, description: '' },
+      { id: 'header-accept', key: 'Accept', value: '*/*', enabled: true, description: '' },
+    ],
+    bodyType: 'none',
     body: '',
     auth: {
-      type: 'none'
-    }
+      type: 'none',
+    },
   });
   const [isSending, setIsSending] = useState(false);
   const [response, setResponse] = useState<ResponseData | null>(null);
@@ -36,6 +40,22 @@ function App() {
 
   const setQueryParams = (queryParams: KeyValueEntry[]) => {
     setRequest((prev) => ({ ...prev, queryParams }));
+  };
+
+  const setHeaders = (headers: KeyValueEntry[]) => {
+    setRequest((prev) => ({ ...prev, headers }));
+  };
+
+  const setBody = (body: string) => {
+    setRequest((prev) => ({ ...prev, body }));
+  };
+
+  const setBodyType = (bodyType: RequestBodyType) => {
+    setRequest((prev) => ({ ...prev, bodyType }));
+  };
+
+  const setAuth = (auth: RequestAuth) => {
+    setRequest((prev) => ({ ...prev, auth }));
   };
 
   const handleSend = async () => {
@@ -114,6 +134,14 @@ function App() {
             setUrl={setUrl}
             queryParams={request.queryParams}
             setQueryParams={setQueryParams}
+            headers={request.headers}
+            setHeaders={setHeaders}
+            bodyType={request.bodyType}
+            setBodyType={setBodyType}
+            body={request.body}
+            setBody={setBody}
+            auth={request.auth}
+            setAuth={setAuth}
             onSend={handleSend}
             isSending={isSending}
           />
