@@ -1,7 +1,7 @@
-export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD' | 'OPTIONS';
 
 export interface KeyValueEntry {
-  id: string;
+  id?: string;
   key: string;
   value: string;
   enabled: boolean;
@@ -28,20 +28,21 @@ export interface RequestAuth {
 
 export type RequestBodyType = 'none' | 'json' | 'text';
 
-export interface ApiRequest {
+export interface ExecuteRequestPayload {
   method: HttpMethod;
   url: string;
-  queryParams: KeyValueEntry[];
-  headers: KeyValueEntry[];
-  bodyType: RequestBodyType;
-  body: string;
-  auth: RequestAuth;
+  queryParams?: KeyValueEntry[];
+  headers?: KeyValueEntry[];
+  bodyType?: RequestBodyType;
+  body?: string;
+  auth?: RequestAuth;
+  timeoutMs?: number;
 }
 
-export interface ResponseData {
+export interface ExecuteResponsePayload {
   status: number;
   statusText: string;
-  headers?: Record<string, string>;
+  headers: Record<string, string>;
   time: number;
   size: number;
   body: string;
