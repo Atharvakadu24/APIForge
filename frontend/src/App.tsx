@@ -1,8 +1,16 @@
-import { useState } from 'react';
+import React, { useState } from 'react';
 import AppShell from './components/AppShell';
 import RequestEditor from './components/RequestEditor';
 import ResponsePanel from './components/ResponsePanel';
 import type { ApiRequest, HttpMethod, KeyValueEntry, RequestAuth, RequestBodyType, ResponseData } from './types/request';
+import type { HistoryItem } from './types/history';
+import {
+  loadHistoryFromStorage,
+  saveHistoryToStorage,
+  clearHistoryFromStorage,
+  cloneRequest,
+  MAX_HISTORY_ITEMS,
+} from './utils/historyStorage';
 
 function App() {
   const [request, setRequest] = useState<ApiRequest>({
@@ -21,6 +29,8 @@ function App() {
   });
   const [isSending, setIsSending] = useState(false);
   const [response, setResponse] = useState<ResponseData | null>(null);
+  const [history, setHistory] = useState<HistoryItem[]>(() => loadHistoryFromStorage());
+  const [selectedHistoryId, setSelectedHistoryId] = useState<string | null>(null);
 
   const setMethod = (method: HttpMethod) => {
     setRequest((prev) => ({ ...prev, method }));
@@ -50,6 +60,40 @@ function App() {
     setRequest((prev) => ({ ...prev, auth }));
   };
 
+  const generateHistoryId = () => {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+      return crypto.randomUUID();
+    }
+    return `${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+  };
+
+  const recordHistory = (
+    reqConfig: ApiRequest,
+    resData: ResponseData,
+    fallbackLatency: number
+  ) => {
+    const historyItem: HistoryItem = {
+      id: generateHistoryId(),
+      timestamp: Date.now(),
+      method: reqConfig.method,
+      url: reqConfig.url,
+      status: resData.status,
+      statusText: resData.statusText || '',
+      latency: resData.time || fallbackLatency,
+      size: resData.size || 0,
+      isError: resData.isError,
+      request: cloneRequest(reqConfig),
+      response: resData,
+    };
+
+    setHistory((prev) => {
+      const next = [historyItem, ...prev].slice(0, MAX_HISTORY_ITEMS);
+      saveHistoryToStorage(next);
+      return next;
+    });
+    setSelectedHistoryId(historyItem.id);
+  };
+
   const handleSend = async () => {
     setIsSending(true);
     setResponse(null);
@@ -65,6 +109,7 @@ function App() {
 
       const data: ResponseData = await res.json();
       setResponse(data);
+      recordHistory(request, data, Math.round(performance.now() - startTime));
     } catch (err: any) {
       const endTime = performance.now();
       const errPayload = {
@@ -73,7 +118,7 @@ function App() {
         suggestion: 'Ensure the APIForge backend server is running.',
       };
       const errBody = JSON.stringify(errPayload, null, 2);
-      setResponse({
+      const errorResponse: ResponseData = {
         status: 503,
         statusText: 'Service Unavailable',
         headers: { 'content-type': 'application/json' },
@@ -82,14 +127,47 @@ function App() {
         body: errBody,
         isError: true,
         errorMessage: err.message,
-      });
+      };
+
+      setResponse(errorResponse);
+      recordHistory(request, errorResponse, errorResponse.time);
     } finally {
       setIsSending(false);
     }
   };
 
+  const handleSelectHistory = (item: HistoryItem) => {
+    setRequest(cloneRequest(item.request));
+    setResponse(item.response ? { ...item.response } : null);
+    setSelectedHistoryId(item.id);
+  };
+
+  const handleClearHistory = () => {
+    setHistory([]);
+    clearHistoryFromStorage();
+    setSelectedHistoryId(null);
+  };
+
+  const handleDeleteHistoryItem = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setHistory((prev) => {
+      const next = prev.filter((item) => item.id !== id);
+      saveHistoryToStorage(next);
+      return next;
+    });
+    if (selectedHistoryId === id) {
+      setSelectedHistoryId(null);
+    }
+  };
+
   return (
-    <AppShell>
+    <AppShell
+      history={history}
+      selectedHistoryId={selectedHistoryId}
+      onSelectHistory={handleSelectHistory}
+      onClearHistory={handleClearHistory}
+      onDeleteHistoryItem={handleDeleteHistoryItem}
+    >
       {/* Centered Workspace layout */}
       <div className="max-w-5xl w-full mx-auto flex flex-col space-y-4 h-full">
         {/* Development Status banner (inline to fit shell) */}
@@ -98,7 +176,7 @@ function App() {
             <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
             <span className="font-semibold text-slate-350">Status: Backend Engine Active</span>
           </div>
-          <span className="text-[10px] text-slate-500 font-mono">Phase 2: Request Execution Engine</span>
+          <span className="text-[10px] text-slate-500 font-mono">Phase 2: Request History Milestone</span>
         </div>
 
         {/* Workspace Panels (Request Editor + Response Inspector) */}

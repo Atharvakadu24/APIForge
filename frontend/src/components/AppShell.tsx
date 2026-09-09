@@ -1,12 +1,25 @@
 import React from 'react';
 import Header from './Header';
 import Sidebar from './Sidebar';
+import type { HistoryItem } from '../types/history';
 
 interface AppShellProps {
   children: React.ReactNode;
+  history: HistoryItem[];
+  selectedHistoryId: string | null;
+  onSelectHistory: (item: HistoryItem) => void;
+  onClearHistory: () => void;
+  onDeleteHistoryItem: (id: string, e: React.MouseEvent) => void;
 }
 
-export default function AppShell({ children }: AppShellProps) {
+export default function AppShell({
+  children,
+  history,
+  selectedHistoryId,
+  onSelectHistory,
+  onClearHistory,
+  onDeleteHistoryItem,
+}: AppShellProps) {
   return (
     <div className="h-screen w-screen flex flex-col bg-slate-950 overflow-hidden text-slate-100">
       {/* Top Application Header */}
@@ -16,7 +29,13 @@ export default function AppShell({ children }: AppShellProps) {
       <div className="flex flex-1 overflow-hidden">
         {/* Left Navigation Sidebar (hidden on extra small screens, toggleable or scrollable) */}
         <div className="hidden sm:block">
-          <Sidebar />
+          <Sidebar
+            history={history}
+            selectedHistoryId={selectedHistoryId}
+            onSelectHistory={onSelectHistory}
+            onClearHistory={onClearHistory}
+            onDeleteHistoryItem={onDeleteHistoryItem}
+          />
         </div>
 
         {/* Content Pane */}
