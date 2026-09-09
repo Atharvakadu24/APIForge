@@ -2,9 +2,18 @@ import React from 'react';
 import Header from './Header';
 import Sidebar from './Sidebar';
 import type { HistoryItem } from '../types/history';
+import type { Collection, SavedRequest } from '../types/collection';
 
 interface AppShellProps {
   children: React.ReactNode;
+  collections: Collection[];
+  activeSavedRequestId: string | null;
+  onSelectSavedRequest: (request: SavedRequest) => void;
+  onOpenCreateCollection: () => void;
+  onOpenRenameCollection: (collection: Collection) => void;
+  onDeleteCollectionPrompt: (collection: Collection) => void;
+  onDeleteSavedRequest: (collectionId: string, requestId: string, e: React.MouseEvent) => void;
+  onNewRequest: () => void;
   history: HistoryItem[];
   selectedHistoryId: string | null;
   onSelectHistory: (item: HistoryItem) => void;
@@ -14,6 +23,14 @@ interface AppShellProps {
 
 export default function AppShell({
   children,
+  collections,
+  activeSavedRequestId,
+  onSelectSavedRequest,
+  onOpenCreateCollection,
+  onOpenRenameCollection,
+  onDeleteCollectionPrompt,
+  onDeleteSavedRequest,
+  onNewRequest,
   history,
   selectedHistoryId,
   onSelectHistory,
@@ -27,9 +44,17 @@ export default function AppShell({
 
       {/* Main Workspace Frame */}
       <div className="flex flex-1 overflow-hidden">
-        {/* Left Navigation Sidebar (hidden on extra small screens, toggleable or scrollable) */}
+        {/* Left Navigation Sidebar */}
         <div className="hidden sm:block">
           <Sidebar
+            collections={collections}
+            activeSavedRequestId={activeSavedRequestId}
+            onSelectSavedRequest={onSelectSavedRequest}
+            onOpenCreateCollection={onOpenCreateCollection}
+            onOpenRenameCollection={onOpenRenameCollection}
+            onDeleteCollectionPrompt={onDeleteCollectionPrompt}
+            onDeleteSavedRequest={onDeleteSavedRequest}
+            onNewRequest={onNewRequest}
             history={history}
             selectedHistoryId={selectedHistoryId}
             onSelectHistory={onSelectHistory}

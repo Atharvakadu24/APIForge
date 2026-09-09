@@ -18,6 +18,10 @@ interface RequestEditorProps {
   setAuth: (auth: RequestAuth) => void;
   onSend: () => void;
   isSending: boolean;
+  activeSavedRequestName?: string | null;
+  onSave: () => void;
+  onSaveAs: () => void;
+  onUpdate?: () => void;
 }
 
 const generateId = () => {
@@ -75,6 +79,10 @@ export default function RequestEditor({
   setAuth,
   onSend,
   isSending,
+  activeSavedRequestName,
+  onSave,
+  onSaveAs,
+  onUpdate,
 }: RequestEditorProps) {
   const [activeTab, setActiveTab] = useState<'params' | 'headers' | 'body' | 'auth'>('params');
   const [showBearerToken, setShowBearerToken] = useState(false);
@@ -250,6 +258,43 @@ export default function RequestEditor({
 
   return (
     <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex flex-col space-y-4">
+      {/* Active Saved Request Indicator Header */}
+      {activeSavedRequestName && (
+        <div className="flex items-center justify-between text-xs pb-2 border-b border-slate-800/80">
+          <div className="flex items-center space-x-2 min-w-0">
+            <span className="text-[9px] font-bold uppercase tracking-wider text-indigo-400 bg-indigo-950/80 px-2 py-0.5 rounded border border-indigo-800/50 shrink-0">
+              Saved Request
+            </span>
+            <span className="text-slate-200 font-semibold truncate text-xs" title={activeSavedRequestName}>
+              {activeSavedRequestName}
+            </span>
+          </div>
+          <div className="flex items-center space-x-1.5 shrink-0">
+            {onUpdate && (
+              <button
+                type="button"
+                onClick={onUpdate}
+                className="bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-[11px] py-1 px-2.5 rounded-md transition duration-150 flex items-center space-x-1 cursor-pointer shadow-sm shadow-indigo-600/20"
+                title="Update saved request with current configuration"
+              >
+                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                <span>Update</span>
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={onSaveAs}
+              className="bg-slate-800 hover:bg-slate-750 text-slate-300 hover:text-white font-medium text-[11px] py-1 px-2.5 rounded-md transition duration-150 flex items-center space-x-1 cursor-pointer border border-slate-700/60"
+              title="Save as a new request"
+            >
+              <span>Save As...</span>
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Top Request Composer */}
       <div className="flex items-center space-x-2">
         {/* Method Selector Dropdown */}
@@ -282,6 +327,21 @@ export default function RequestEditor({
             className="w-full bg-slate-950 border border-slate-800 text-slate-200 placeholder-slate-600 rounded-lg px-3.5 py-2 text-xs font-mono focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/35 transition"
           />
         </div>
+
+        {/* Save / Save As Button */}
+        {!activeSavedRequestName && (
+          <button
+            type="button"
+            onClick={onSave}
+            className="bg-slate-800 hover:bg-slate-750 text-slate-300 hover:text-white font-semibold text-xs py-2 px-3.5 rounded-lg border border-slate-700/80 transition duration-150 flex items-center space-x-1.5 cursor-pointer shadow-sm"
+            title="Save request to collection"
+          >
+            <svg className="w-3.5 h-3.5 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+            </svg>
+            <span>Save</span>
+          </button>
+        )}
 
         {/* Send Button */}
         <button
