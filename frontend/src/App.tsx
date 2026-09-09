@@ -5,9 +5,11 @@ import ResponsePanel from './components/ResponsePanel';
 import SaveRequestModal from './components/SaveRequestModal';
 import CollectionModal from './components/CollectionModal';
 import ConfirmModal from './components/ConfirmModal';
+import EnvironmentModal from './components/EnvironmentModal';
 import type { ApiRequest, HttpMethod, KeyValueEntry, RequestAuth, RequestBodyType, ResponseData } from './types/request';
 import type { HistoryItem } from './types/history';
 import type { Collection, SavedRequest } from './types/collection';
+import type { Environment, EnvironmentVariable } from './types/environment';
 import {
   loadHistoryFromStorage,
   saveHistoryToStorage,
@@ -19,6 +21,13 @@ import {
   loadCollectionsFromStorage,
   saveCollectionsToStorage,
 } from './utils/collectionStorage';
+import {
+  loadEnvironmentsFromStorage,
+  saveEnvironmentsToStorage,
+  loadActiveEnvironmentId,
+  saveActiveEnvironmentId,
+} from './utils/environmentStorage';
+import { resolveApiRequest } from './utils/variableResolver';
 
 const generateUniqueId = () => {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -54,6 +63,14 @@ function App() {
   // Collections State
   const [collections, setCollections] = useState<Collection[]>(() => loadCollectionsFromStorage());
   const [activeSavedRequestId, setActiveSavedRequestId] = useState<string | null>(null);
+
+  // Environments State
+  const [environments, setEnvironments] = useState<Environment[]>(() => loadEnvironmentsFromStorage());
+  const [activeEnvironmentId, setActiveEnvironmentId] = useState<string | null>(() => {
+    const loadedEnvs = loadEnvironmentsFromStorage();
+    return loadActiveEnvironmentId(loadedEnvs);
+  });
+  const [isEnvironmentModalOpen, setIsEnvironmentModalOpen] = useState(false);
 
   // Modals State
   const [isSaveModalOpen, setIsSaveModalOpen] = useState(false);
@@ -111,6 +128,9 @@ function App() {
     setRequest((prev) => ({ ...prev, auth }));
   };
 
+  // Active Environment lookup
+  const activeEnvironment = environments.find((e) => e.id === activeEnvironmentId) || null;
+
   // Active saved request lookup
   const activeSavedRequest = collections
     .flatMap((c) => c.requests)
@@ -125,7 +145,7 @@ function App() {
     setSelectedHistoryId(null);
   };
 
-  // Record history
+  // Record history (preserves template request with variables, does not expose secret values)
   const recordHistory = (
     reqConfig: ApiRequest,
     resData: ResponseData,
@@ -153,10 +173,39 @@ function App() {
     setSelectedHistoryId(historyItem.id);
   };
 
-  // Execute request
+  // Execute request with variable resolution
   const handleSend = async () => {
     setIsSending(true);
     setResponse(null);
+
+    // 1. Resolve environment variables on a cloned request
+    const resolution = resolveApiRequest(request, activeEnvironment);
+
+    // 2. If unresolved variables are detected, halt and show structured error
+    if (!resolution.isValid) {
+      setIsSending(false);
+      const errPayload = {
+        error: 'Unresolved Environment Variables',
+        message: 'The request contains variable placeholders that could not be resolved in the active environment.',
+        activeEnvironment: activeEnvironment ? activeEnvironment.name : 'No Environment',
+        unresolvedVariables: resolution.unresolved,
+        suggestion: 'Check that the referenced variables are defined and enabled in the Environment Manager.',
+      };
+      const errBody = JSON.stringify(errPayload, null, 2);
+      setResponse({
+        status: 400,
+        statusText: 'Bad Request (Unresolved Variables)',
+        headers: { 'content-type': 'application/json' },
+        time: 0,
+        size: new Blob([errBody]).size,
+        body: errBody,
+        isError: true,
+        errorMessage: `Unresolved variables: ${resolution.unresolved.map((u) => `{{${u.name}}}`).join(', ')}`,
+      });
+      return;
+    }
+
+    // 3. Dispatch resolved request to backend execution proxy
     const startTime = performance.now();
     try {
       const res = await fetch('http://localhost:3001/api/request/execute', {
@@ -164,7 +213,7 @@ function App() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(request),
+        body: JSON.stringify(resolution.resolvedRequest),
       });
 
       const data: ResponseData = await res.json();
@@ -194,6 +243,65 @@ function App() {
     } finally {
       setIsSending(false);
     }
+  };
+
+  // Environment Handlers
+  const handleSelectEnvironment = (id: string | null) => {
+    setActiveEnvironmentId(id);
+    saveActiveEnvironmentId(id);
+  };
+
+  const handleCreateEnvironment = (name: string): string => {
+    const newId = generateUniqueId();
+    const newEnv: Environment = {
+      id: newId,
+      name,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      variables: [],
+    };
+    setEnvironments((prev) => {
+      const next = [...prev, newEnv];
+      saveEnvironmentsToStorage(next);
+      return next;
+    });
+    if (!activeEnvironmentId) {
+      setActiveEnvironmentId(newId);
+      saveActiveEnvironmentId(newId);
+    }
+    return newId;
+  };
+
+  const handleRenameEnvironment = (id: string, newName: string) => {
+    setEnvironments((prev) => {
+      const next = prev.map((e) =>
+        e.id === id ? { ...e, name: newName, updatedAt: Date.now() } : e
+      );
+      saveEnvironmentsToStorage(next);
+      return next;
+    });
+  };
+
+  const handleDeleteEnvironment = (id: string) => {
+    setEnvironments((prev) => {
+      const next = prev.filter((e) => e.id !== id);
+      saveEnvironmentsToStorage(next);
+      return next;
+    });
+    if (activeEnvironmentId === id) {
+      setActiveEnvironmentId(null);
+      saveActiveEnvironmentId(null);
+    }
+  };
+
+  const handleUpdateEnvironmentVariables = (envId: string, variables: EnvironmentVariable[]) => {
+    setEnvironments((prev) => {
+      const next = prev.map((e) =>
+        e.id === envId ? { ...e, variables, updatedAt: Date.now() } : e
+      );
+      saveEnvironmentsToStorage(next);
+      return next;
+    });
   };
 
   // History Actions
@@ -391,16 +499,25 @@ function App() {
       onSelectHistory={handleSelectHistory}
       onClearHistory={handleClearHistory}
       onDeleteHistoryItem={handleDeleteHistoryItem}
+      environments={environments}
+      activeEnvironmentId={activeEnvironmentId}
+      onSelectEnvironment={handleSelectEnvironment}
+      onOpenEnvironmentManager={() => setIsEnvironmentModalOpen(true)}
     >
       {/* Centered Workspace layout */}
       <div className="max-w-5xl w-full mx-auto flex flex-col space-y-4 h-full">
-        {/* Development Status banner (inline to fit shell) */}
+        {/* Development Status banner */}
         <div className="bg-slate-900/40 border border-slate-850 px-4 py-2 rounded-lg flex items-center justify-between text-xs text-slate-400 select-none">
           <div className="flex items-center space-x-2">
             <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
             <span className="font-semibold text-slate-350">Status: Backend Engine Active</span>
+            {activeEnvironment && (
+              <span className="text-[10px] font-mono bg-indigo-950/60 text-indigo-300 border border-indigo-800/40 px-2 py-0.5 rounded-full ml-2">
+                Env: {activeEnvironment.name}
+              </span>
+            )}
           </div>
-          <span className="text-[10px] text-slate-500 font-mono">Phase 2: Saved Requests + Collections</span>
+          <span className="text-[10px] text-slate-500 font-mono">Phase 2: Environment Variables</span>
         </div>
 
         {/* Workspace Panels (Request Editor + Response Inspector) */}
@@ -434,6 +551,19 @@ function App() {
           />
         </div>
       </div>
+
+      {/* Environment Manager Modal */}
+      <EnvironmentModal
+        isOpen={isEnvironmentModalOpen}
+        environments={environments}
+        activeEnvironmentId={activeEnvironmentId}
+        onClose={() => setIsEnvironmentModalOpen(false)}
+        onCreateEnvironment={handleCreateEnvironment}
+        onRenameEnvironment={handleRenameEnvironment}
+        onDeleteEnvironment={handleDeleteEnvironment}
+        onSelectEnvironment={handleSelectEnvironment}
+        onUpdateVariables={handleUpdateEnvironmentVariables}
+      />
 
       {/* Save Request Modal */}
       <SaveRequestModal

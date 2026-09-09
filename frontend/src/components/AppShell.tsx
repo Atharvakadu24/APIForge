@@ -3,6 +3,7 @@ import Header from './Header';
 import Sidebar from './Sidebar';
 import type { HistoryItem } from '../types/history';
 import type { Collection, SavedRequest } from '../types/collection';
+import type { Environment } from '../types/environment';
 
 interface AppShellProps {
   children: React.ReactNode;
@@ -19,6 +20,10 @@ interface AppShellProps {
   onSelectHistory: (item: HistoryItem) => void;
   onClearHistory: () => void;
   onDeleteHistoryItem: (id: string, e: React.MouseEvent) => void;
+  environments: Environment[];
+  activeEnvironmentId: string | null;
+  onSelectEnvironment: (id: string | null) => void;
+  onOpenEnvironmentManager: () => void;
 }
 
 export default function AppShell({
@@ -36,11 +41,20 @@ export default function AppShell({
   onSelectHistory,
   onClearHistory,
   onDeleteHistoryItem,
+  environments,
+  activeEnvironmentId,
+  onSelectEnvironment,
+  onOpenEnvironmentManager,
 }: AppShellProps) {
   return (
     <div className="h-screen w-screen flex flex-col bg-slate-950 overflow-hidden text-slate-100">
       {/* Top Application Header */}
-      <Header />
+      <Header
+        environments={environments}
+        activeEnvironmentId={activeEnvironmentId}
+        onSelectEnvironment={onSelectEnvironment}
+        onOpenEnvironmentManager={onOpenEnvironmentManager}
+      />
 
       {/* Main Workspace Frame */}
       <div className="flex flex-1 overflow-hidden">
