@@ -9,6 +9,7 @@ import type { Environment } from '../types/environment';
 interface AppShellProps {
   children: React.ReactNode;
   collections: Collection[];
+  isLoadingCollections?: boolean;
   activeSavedRequestId: string | null;
   onSelectSavedRequest: (request: SavedRequest) => void;
   onOpenCreateCollection: () => void;
@@ -32,6 +33,7 @@ interface AppShellProps {
 export default function AppShell({
   children,
   collections,
+  isLoadingCollections = false,
   activeSavedRequestId,
   onSelectSavedRequest,
   onOpenCreateCollection,
@@ -69,6 +71,7 @@ export default function AppShell({
         <div className="hidden sm:block">
           <Sidebar
             collections={collections}
+            isLoadingCollections={isLoadingCollections}
             activeSavedRequestId={activeSavedRequestId}
             onSelectSavedRequest={onSelectSavedRequest}
             onOpenCreateCollection={onOpenCreateCollection}

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import type { User } from '@supabase/supabase-js';
 import { AuthProvider } from './contexts/AuthContext';
 import { useAuth } from './hooks/useAuth';
@@ -15,6 +15,7 @@ import type { ApiRequest, HttpMethod, KeyValueEntry, RequestAuth, RequestBodyTyp
 import type { HistoryItem } from './types/history';
 import type { Collection, SavedRequest } from './types/collection';
 import type { Environment, EnvironmentVariable } from './types/environment';
+import * as collectionService from './services/collectionService';
 import {
   loadHistoryFromStorage,
   saveHistoryToStorage,
@@ -22,10 +23,6 @@ import {
   cloneRequest,
   MAX_HISTORY_ITEMS,
 } from './utils/historyStorage';
-import {
-  loadCollectionsFromStorage,
-  saveCollectionsToStorage,
-} from './utils/collectionStorage';
 import {
   loadEnvironmentsFromStorage,
   saveEnvironmentsToStorage,
@@ -66,15 +63,17 @@ function AuthenticatedWorkspace({ user, onSignOut }: AuthenticatedWorkspaceProps
   const [isSending, setIsSending] = useState(false);
   const [response, setResponse] = useState<ResponseData | null>(null);
   
-  // History State
+  // History State (Persisted in localStorage)
   const [history, setHistory] = useState<HistoryItem[]>(() => loadHistoryFromStorage());
   const [selectedHistoryId, setSelectedHistoryId] = useState<string | null>(null);
 
-  // Collections State
-  const [collections, setCollections] = useState<Collection[]>(() => loadCollectionsFromStorage());
+  // Collections State (Persisted in Supabase PostgreSQL)
+  const [collections, setCollections] = useState<Collection[]>([]);
+  const [isLoadingCollections, setIsLoadingCollections] = useState<boolean>(true);
   const [activeSavedRequestId, setActiveSavedRequestId] = useState<string | null>(null);
+  const [cloudError, setCloudError] = useState<string | null>(null);
 
-  // Environments State
+  // Environments State (Persisted in localStorage)
   const [environments, setEnvironments] = useState<Environment[]>(() => loadEnvironmentsFromStorage());
   const [activeEnvironmentId, setActiveEnvironmentId] = useState<string | null>(() => {
     const loadedEnvs = loadEnvironmentsFromStorage();
@@ -108,6 +107,52 @@ function AuthenticatedWorkspace({ user, onSignOut }: AuthenticatedWorkspaceProps
     message: '',
     onConfirm: () => {},
   });
+
+  useEffect(() => {
+    let isCancelled = false;
+
+    async function fetchCollections() {
+      try {
+        const { data, error } = await collectionService.getCollections();
+
+        if (error) {
+          if (!isCancelled) {
+            setCloudError(`Failed to load collections from Supabase: ${error.message}`);
+            setIsLoadingCollections(false);
+          }
+          return;
+        }
+
+        const initialCloud = data || [];
+
+        // Check for legacy localStorage data and safely sync if needed
+        const migrationResult = await collectionService.syncOrMigrateLegacyCollections(
+          user.id,
+          initialCloud
+        );
+
+        if (!isCancelled) {
+          if (migrationResult.error) {
+            setCloudError(`Migration notice: ${migrationResult.error.message}`);
+          }
+          setCollections(migrationResult.collections);
+          setIsLoadingCollections(false);
+        }
+      } catch (err: unknown) {
+        if (!isCancelled) {
+          const msg = err instanceof Error ? err.message : 'Unknown error loading collections';
+          setCloudError(msg);
+          setIsLoadingCollections(false);
+        }
+      }
+    }
+
+    fetchCollections();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [user.id]);
 
   // Request State Mutators
   const setMethod = (method: HttpMethod) => {
@@ -155,7 +200,7 @@ function AuthenticatedWorkspace({ user, onSignOut }: AuthenticatedWorkspaceProps
     setSelectedHistoryId(null);
   };
 
-  // Record history (preserves template request with variables, does not expose secret values)
+  // Record history (preserves template request with variables in localStorage)
   const recordHistory = (
     reqConfig: ApiRequest,
     resData: ResponseData,
@@ -256,7 +301,7 @@ function AuthenticatedWorkspace({ user, onSignOut }: AuthenticatedWorkspaceProps
     }
   };
 
-  // Environment Handlers
+  // Environment Handlers (LocalStorage)
   const handleSelectEnvironment = (id: string | null) => {
     setActiveEnvironmentId(id);
     saveActiveEnvironmentId(id);
@@ -315,7 +360,7 @@ function AuthenticatedWorkspace({ user, onSignOut }: AuthenticatedWorkspaceProps
     });
   };
 
-  // History Actions
+  // History Actions (LocalStorage)
   const handleSelectHistory = (item: HistoryItem) => {
     setRequest(cloneRequest(item.request));
     setResponse(item.response ? { ...item.response } : null);
@@ -340,32 +385,30 @@ function AuthenticatedWorkspace({ user, onSignOut }: AuthenticatedWorkspaceProps
     }
   };
 
-  // Collection CRUD
-  const handleCreateCollection = (name: string): string => {
-    const newId = generateUniqueId();
-    const newCollection: Collection = {
-      id: newId,
-      name,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-      requests: [],
-    };
-    setCollections((prev) => {
-      const next = [...prev, newCollection];
-      saveCollectionsToStorage(next);
-      return next;
-    });
-    return newId;
+  // Supabase Collections CRUD
+  const handleCreateCollection = async (name: string): Promise<string> => {
+    setCloudError(null);
+    const { data, error } = await collectionService.createCollection(name);
+    if (error || !data) {
+      setCloudError(`Failed to create collection: ${error?.message || 'Unknown error'}`);
+      throw new Error(error?.message || 'Failed to create collection');
+    }
+
+    setCollections((prev) => [...prev, data]);
+    return data.id;
   };
 
-  const handleRenameCollection = (collectionId: string, newName: string) => {
-    setCollections((prev) => {
-      const next = prev.map((c) =>
-        c.id === collectionId ? { ...c, name: newName, updatedAt: Date.now() } : c
-      );
-      saveCollectionsToStorage(next);
-      return next;
-    });
+  const handleRenameCollection = async (collectionId: string, newName: string) => {
+    setCloudError(null);
+    const { data, error } = await collectionService.renameCollection(collectionId, newName);
+    if (error || !data) {
+      setCloudError(`Failed to rename collection: ${error?.message || 'Unknown error'}`);
+      return;
+    }
+
+    setCollections((prev) =>
+      prev.map((c) => (c.id === collectionId ? { ...c, name: data.name, updatedAt: data.updatedAt } : c))
+    );
   };
 
   const handleOpenCreateCollectionModal = () => {
@@ -374,7 +417,7 @@ function AuthenticatedWorkspace({ user, onSignOut }: AuthenticatedWorkspaceProps
       title: 'New Collection',
       initialName: '',
       onSave: (name: string) => {
-        handleCreateCollection(name);
+        handleCreateCollection(name).catch((err) => console.error(err));
       },
     });
   };
@@ -385,7 +428,7 @@ function AuthenticatedWorkspace({ user, onSignOut }: AuthenticatedWorkspaceProps
       title: 'Rename Collection',
       initialName: collection.name,
       onSave: (newName: string) => {
-        handleRenameCollection(collection.id, newName);
+        handleRenameCollection(collection.id, newName).catch((err) => console.error(err));
       },
     });
   };
@@ -393,19 +436,22 @@ function AuthenticatedWorkspace({ user, onSignOut }: AuthenticatedWorkspaceProps
   const handleDeleteCollectionPrompt = (collection: Collection) => {
     const count = collection.requests.length;
     const message = count > 0
-      ? `Are you sure you want to delete "${collection.name}"? This will permanently remove the collection and all ${count} saved request${count > 1 ? 's' : ''} inside it.`
+      ? `Are you sure you want to delete "${collection.name}"? This will permanently remove the collection and all ${count} saved request${count > 1 ? 's' : ''} from your Supabase cloud database.`
       : `Are you sure you want to delete "${collection.name}"?`;
 
     setConfirmModalState({
       isOpen: true,
       title: 'Delete Collection',
       message,
-      onConfirm: () => {
-        setCollections((prev) => {
-          const next = prev.filter((c) => c.id !== collection.id);
-          saveCollectionsToStorage(next);
-          return next;
-        });
+      onConfirm: async () => {
+        setCloudError(null);
+        const { error } = await collectionService.deleteCollection(collection.id);
+        if (error) {
+          setCloudError(`Failed to delete collection: ${error.message}`);
+          return;
+        }
+
+        setCollections((prev) => prev.filter((c) => c.id !== collection.id));
         if (activeSavedRequest && activeSavedRequest.collectionId === collection.id) {
           setActiveSavedRequestId(null);
         }
@@ -413,70 +459,88 @@ function AuthenticatedWorkspace({ user, onSignOut }: AuthenticatedWorkspaceProps
     });
   };
 
-  // Saved Request CRUD
+  // Supabase Saved Request CRUD
   const handleSelectSavedRequest = (savedReq: SavedRequest) => {
     setRequest(cloneRequest(savedReq.request));
     setActiveSavedRequestId(savedReq.id);
     setSelectedHistoryId(null);
   };
 
-  const handleSaveRequestSubmit = (name: string, targetCollectionId: string) => {
-    const newSavedRequest: SavedRequest = {
-      id: generateUniqueId(),
-      collectionId: targetCollectionId,
+  const handleSaveRequestSubmit = async (name: string, targetCollectionId: string) => {
+    setCloudError(null);
+    const { data, error } = await collectionService.createSavedRequest(
+      targetCollectionId,
       name,
-      request: cloneRequest(request),
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-    };
+      cloneRequest(request)
+    );
 
-    setCollections((prev) => {
-      const next = prev.map((c) => {
+    if (error || !data) {
+      setCloudError(`Failed to save request: ${error?.message || 'Unknown error'}`);
+      return;
+    }
+
+    setCollections((prev) =>
+      prev.map((c) => {
         if (c.id === targetCollectionId) {
           return {
             ...c,
             updatedAt: Date.now(),
-            requests: [...c.requests, newSavedRequest],
+            requests: [...c.requests, data],
           };
         }
         return c;
-      });
-      saveCollectionsToStorage(next);
-      return next;
-    });
+      })
+    );
 
-    setActiveSavedRequestId(newSavedRequest.id);
+    setActiveSavedRequestId(data.id);
   };
 
-  const handleUpdateSavedRequest = () => {
+  const handleUpdateSavedRequest = async () => {
     if (!activeSavedRequestId) {
       setIsSaveModalOpen(true);
       return;
     }
 
-    setCollections((prev) => {
-      const next = prev.map((c) => {
+    setCloudError(null);
+    const { data, error } = await collectionService.updateSavedRequest(
+      activeSavedRequestId,
+      cloneRequest(request)
+    );
+
+    if (error || !data) {
+      setCloudError(`Failed to update request: ${error?.message || 'Unknown error'}`);
+      return;
+    }
+
+    setCollections((prev) =>
+      prev.map((c) => {
         const hasReq = c.requests.some((r) => r.id === activeSavedRequestId);
         if (!hasReq) return c;
         return {
           ...c,
           updatedAt: Date.now(),
-          requests: c.requests.map((r) =>
-            r.id === activeSavedRequestId
-              ? { ...r, request: cloneRequest(request), updatedAt: Date.now() }
-              : r
-          ),
+          requests: c.requests.map((r) => (r.id === activeSavedRequestId ? data : r)),
         };
-      });
-      saveCollectionsToStorage(next);
-      return next;
-    });
+      })
+    );
   };
 
-  const handleDeleteSavedRequest = (collectionId: string, requestId: string, e: React.MouseEvent) => {
+  const handleDeleteSavedRequest = async (
+    collectionId: string,
+    requestId: string,
+    e: React.MouseEvent
+  ) => {
     e.stopPropagation();
-    setCollections((prev) => {
-      const next = prev.map((c) => {
+    setCloudError(null);
+
+    const { error } = await collectionService.deleteSavedRequest(requestId);
+    if (error) {
+      setCloudError(`Failed to delete saved request: ${error.message}`);
+      return;
+    }
+
+    setCollections((prev) =>
+      prev.map((c) => {
         if (c.id === collectionId) {
           return {
             ...c,
@@ -485,10 +549,8 @@ function AuthenticatedWorkspace({ user, onSignOut }: AuthenticatedWorkspaceProps
           };
         }
         return c;
-      });
-      saveCollectionsToStorage(next);
-      return next;
-    });
+      })
+    );
 
     if (activeSavedRequestId === requestId) {
       setActiveSavedRequestId(null);
@@ -498,6 +560,7 @@ function AuthenticatedWorkspace({ user, onSignOut }: AuthenticatedWorkspaceProps
   return (
     <AppShell
       collections={collections}
+      isLoadingCollections={isLoadingCollections}
       activeSavedRequestId={activeSavedRequestId}
       onSelectSavedRequest={handleSelectSavedRequest}
       onOpenCreateCollection={handleOpenCreateCollectionModal}
@@ -531,9 +594,31 @@ function AuthenticatedWorkspace({ user, onSignOut }: AuthenticatedWorkspaceProps
             )}
           </div>
           <div className="flex items-center space-x-2">
-            <span className="text-[10px] text-slate-500 font-mono">Supabase Auth Connected</span>
+            <span className="text-[10px] text-indigo-350 font-mono flex items-center space-x-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-indigo-400" />
+              <span>Supabase Collections Active</span>
+            </span>
           </div>
         </div>
+
+        {/* Cloud Error Banner */}
+        {cloudError && (
+          <div className="bg-rose-950/40 border border-rose-800/60 rounded-lg p-3 text-rose-300 text-xs flex items-center justify-between animate-fade-in">
+            <div className="flex items-center space-x-2">
+              <svg className="w-4 h-4 text-rose-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <span>{cloudError}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setCloudError(null)}
+              className="text-rose-400 hover:text-rose-200 text-xs font-semibold px-2 py-0.5 rounded hover:bg-rose-900/40 cursor-pointer"
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
 
         {/* Workspace Panels (Request Editor + Response Inspector) */}
         <div className="flex-1 flex flex-col space-y-4 overflow-hidden min-h-0">

@@ -9,7 +9,7 @@ interface SaveRequestModalProps {
   collections: Collection[];
   onClose: () => void;
   onSave: (name: string, collectionId: string) => void;
-  onCreateCollection: (name: string) => string;
+  onCreateCollection: (name: string) => Promise<string> | string;
 }
 
 function SaveRequestModalContent({
@@ -30,26 +30,32 @@ function SaveRequestModalContent({
   });
   const [isCreatingCollection, setIsCreatingCollection] = useState(collections.length === 0);
   const [newCollectionName, setNewCollectionName] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     inputRef.current?.focus();
   }, []);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return;
 
-    let targetCollectionId = collectionId;
+    setIsSubmitting(true);
+    try {
+      let targetCollectionId = collectionId;
 
-    if (isCreatingCollection) {
-      if (!newCollectionName.trim()) return;
-      targetCollectionId = onCreateCollection(newCollectionName.trim());
-    }
+      if (isCreatingCollection) {
+        if (!newCollectionName.trim()) return;
+        targetCollectionId = await onCreateCollection(newCollectionName.trim());
+      }
 
-    if (targetCollectionId) {
-      onSave(name.trim(), targetCollectionId);
-      onClose();
+      if (targetCollectionId) {
+        onSave(name.trim(), targetCollectionId);
+        onClose();
+      }
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -80,7 +86,7 @@ function SaveRequestModalContent({
           <button
             type="button"
             onClick={onClose}
-            className="text-slate-500 hover:text-slate-300 p-1 rounded-lg hover:bg-slate-800 transition"
+            className="text-slate-500 hover:text-slate-300 p-1 rounded-lg hover:bg-slate-800 transition cursor-pointer"
           >
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -106,54 +112,62 @@ function SaveRequestModalContent({
             />
           </div>
 
-          {/* Collection Selection */}
-          <div>
-            <div className="flex items-center justify-between mb-1.5">
+          {/* Target Collection Selection */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
               <label className="block text-xs font-semibold text-slate-300">
-                Target Collection
+                Select Collection
               </label>
               {collections.length > 0 && (
                 <button
                   type="button"
                   onClick={() => setIsCreatingCollection(!isCreatingCollection)}
-                  className="text-[10px] text-indigo-400 hover:text-indigo-300 font-semibold cursor-pointer"
+                  className="text-xs text-indigo-400 hover:text-indigo-300 font-semibold cursor-pointer"
                 >
-                  {isCreatingCollection ? 'Select Existing' : '+ New Collection'}
+                  {isCreatingCollection ? 'Choose Existing' : '+ New Collection'}
                 </button>
               )}
             </div>
 
-            {isCreatingCollection || collections.length === 0 ? (
-              <div>
+            {isCreatingCollection ? (
+              <div className="space-y-1.5 p-3 bg-slate-950/60 rounded-lg border border-slate-800/80">
                 <input
                   type="text"
                   value={newCollectionName}
                   onChange={(e) => setNewCollectionName(e.target.value)}
                   placeholder="Enter new collection name..."
-                  className="w-full bg-slate-950 border border-slate-800 text-slate-200 placeholder-slate-600 rounded-lg px-3 py-2 text-xs font-medium focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/30 transition"
+                  className="w-full bg-slate-950 border border-slate-800 text-slate-200 placeholder-slate-600 rounded-lg px-3 py-1.5 text-xs font-medium focus:outline-none focus:border-indigo-500 transition"
                   required
                 />
-                <p className="text-[10px] text-slate-500 mt-1">
-                  A new collection will be created automatically.
+                <p className="text-[10px] text-slate-500">
+                  This will create a new collection in Supabase and save this request inside it.
                 </p>
               </div>
             ) : (
-              <select
-                value={collectionId}
-                onChange={(e) => setCollectionId(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-800 text-slate-200 rounded-lg px-3 py-2 text-xs font-medium focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/30 transition cursor-pointer"
-              >
-                {collections.map((col) => (
-                  <option key={col.id} value={col.id}>
-                    {col.name} ({col.requests.length} requests)
-                  </option>
-                ))}
-              </select>
+              <div className="relative">
+                <select
+                  value={collectionId}
+                  onChange={(e) => setCollectionId(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 text-slate-200 rounded-lg px-3 py-2 text-xs font-medium focus:outline-none focus:border-indigo-500 cursor-pointer appearance-none pr-8"
+                  required
+                >
+                  {collections.map((col) => (
+                    <option key={col.id} value={col.id}>
+                      {col.name} ({col.requests.length} request{col.requests.length !== 1 ? 's' : ''})
+                    </option>
+                  ))}
+                </select>
+                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2.5 text-slate-500">
+                  <svg className="fill-current h-3 w-3" viewBox="0 0 20 20">
+                    <path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z" />
+                  </svg>
+                </div>
+              </div>
             )}
           </div>
 
           {/* Modal Footer */}
-          <div className="flex items-center justify-end space-x-2 pt-2 border-t border-slate-850">
+          <div className="flex items-center justify-end space-x-2 pt-3 border-t border-slate-850">
             <button
               type="button"
               onClick={onClose}
@@ -163,10 +177,10 @@ function SaveRequestModalContent({
             </button>
             <button
               type="submit"
-              disabled={!name.trim() || (isCreatingCollection && !newCollectionName.trim())}
+              disabled={isSubmitting || !name.trim() || (isCreatingCollection && !newCollectionName.trim())}
               className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-500 disabled:bg-indigo-900/50 disabled:text-slate-500 text-white rounded-lg text-xs font-semibold shadow-md shadow-indigo-600/20 transition duration-150 cursor-pointer disabled:cursor-not-allowed"
             >
-              Save Request
+              {isSubmitting ? 'Saving...' : 'Save Request'}
             </button>
           </div>
         </form>

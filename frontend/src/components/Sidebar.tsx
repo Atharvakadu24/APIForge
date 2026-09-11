@@ -4,6 +4,7 @@ import type { Collection, SavedRequest } from '../types/collection';
 
 export interface SidebarProps {
   collections: Collection[];
+  isLoadingCollections?: boolean;
   activeSavedRequestId: string | null;
   onSelectSavedRequest: (request: SavedRequest) => void;
   onOpenCreateCollection: () => void;
@@ -20,6 +21,7 @@ export interface SidebarProps {
 
 export default function Sidebar({
   collections,
+  isLoadingCollections = false,
   activeSavedRequestId,
   onSelectSavedRequest,
   onOpenCreateCollection,
@@ -104,10 +106,17 @@ export default function Sidebar({
           <div className="flex items-center justify-between px-2 mb-1.5">
             <div className="flex items-center space-x-1.5">
               <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Collections</span>
-              {collections.length > 0 && (
-                <span className="text-[9px] font-mono bg-slate-800 text-slate-400 px-1.5 py-0.2 rounded-full">
-                  {collections.length}
-                </span>
+              {isLoadingCollections ? (
+                <svg className="animate-spin h-3 w-3 text-indigo-400" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                </svg>
+              ) : (
+                collections.length > 0 && (
+                  <span className="text-[9px] font-mono bg-slate-800 text-slate-400 px-1.5 py-0.2 rounded-full">
+                    {collections.length}
+                  </span>
+                )
               )}
             </div>
             <button
@@ -122,7 +131,12 @@ export default function Sidebar({
           </div>
 
           <div className="space-y-1">
-            {collections.length === 0 ? (
+            {isLoadingCollections ? (
+              <div className="px-3 py-4 space-y-2">
+                <div className="h-6 bg-slate-850/60 rounded animate-pulse" />
+                <div className="h-6 bg-slate-850/40 rounded animate-pulse" />
+              </div>
+            ) : collections.length === 0 ? (
               <div className="px-3 py-5 text-center bg-slate-900/30 rounded-lg border border-dashed border-slate-850">
                 <svg className="w-5 h-5 mx-auto mb-1.5 text-slate-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
@@ -173,7 +187,7 @@ export default function Sidebar({
                             e.stopPropagation();
                             onOpenRenameCollection(col);
                           }}
-                          className="p-1 text-slate-500 hover:text-slate-200 hover:bg-slate-700/60 rounded transition"
+                          className="p-1 text-slate-500 hover:text-slate-200 hover:bg-slate-700/60 rounded transition cursor-pointer"
                           title="Rename collection"
                         >
                           <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -186,7 +200,7 @@ export default function Sidebar({
                             e.stopPropagation();
                             onDeleteCollectionPrompt(col);
                           }}
-                          className="p-1 text-slate-500 hover:text-rose-400 hover:bg-rose-950/40 rounded transition"
+                          className="p-1 text-slate-500 hover:text-rose-400 hover:bg-rose-950/40 rounded transition cursor-pointer"
                           title="Delete collection"
                         >
                           <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -228,7 +242,7 @@ export default function Sidebar({
                                 <button
                                   type="button"
                                   onClick={(e) => onDeleteSavedRequest(col.id, req.id, e)}
-                                  className="opacity-0 group-hover/req:opacity-100 p-0.5 text-slate-500 hover:text-rose-400 hover:bg-rose-950/40 rounded transition shrink-0 ml-1"
+                                  className="opacity-0 group-hover/req:opacity-100 p-0.5 text-slate-500 hover:text-rose-400 hover:bg-rose-950/40 rounded transition shrink-0 ml-1 cursor-pointer"
                                   title="Delete saved request"
                                 >
                                   <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -313,7 +327,7 @@ export default function Sidebar({
                         <button
                           type="button"
                           onClick={(e) => onDeleteHistoryItem(item.id, e)}
-                          className="opacity-0 group-hover:opacity-100 p-0.5 text-slate-500 hover:text-rose-400 hover:bg-rose-950/40 rounded transition"
+                          className="opacity-0 group-hover:opacity-100 p-0.5 text-slate-500 hover:text-rose-400 hover:bg-rose-950/40 rounded transition cursor-pointer"
                           title="Delete history item"
                         >
                           <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
