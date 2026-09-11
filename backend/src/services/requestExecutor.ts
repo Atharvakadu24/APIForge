@@ -1,63 +1,143 @@
+import http from 'http';
+import https from 'https';
 import type { ExecuteRequestPayload, ExecuteResponsePayload } from '../types/execution';
+import { SSRFValidator, SSRFSecurityError } from './ssrfValidator';
 
-// Blocked hostnames / IP addresses for SSRF protection
-const BLOCKED_HOSTS = new Set([
-  '169.254.169.254',             // AWS / GCP / Azure Instance Metadata Service
-  'metadata.google.internal',    // GCP Metadata server
-  'metadata.azure.internal',     // Azure Metadata server
-  '100.100.100.200',             // Alibaba Cloud Metadata server
-]);
+const MAX_REDIRECTS = 5;
+
+// Dedicated security agents with socket-level DNS lookup validation
+const ssrfLookupHook = SSRFValidator.createSsrfSafeLookup();
+
+const httpAgent = new http.Agent({
+  lookup: ssrfLookupHook,
+  keepAlive: true,
+  maxSockets: 50,
+});
+
+const httpsAgent = new https.Agent({
+  lookup: ssrfLookupHook,
+  keepAlive: true,
+  maxSockets: 50,
+});
+
+interface InternalHttpResponse {
+  status: number;
+  statusText: string;
+  headers: Record<string, string>;
+  body: string;
+  location?: string;
+}
 
 export class RequestExecutorService {
   /**
-   * Validates target URL and checks for security/SSRF risks.
+   * Dispatches a single HTTP/HTTPS request over a secure agent.
    */
-  private static validateUrl(rawUrl: string): URL {
-    if (!rawUrl || typeof rawUrl !== 'string' || !rawUrl.trim()) {
-      throw new Error('URL cannot be empty');
-    }
+  private static executeSingleRequest(
+    targetUrl: URL,
+    method: string,
+    headers: Record<string, string>,
+    body: string | undefined,
+    timeoutMs: number
+  ): Promise<InternalHttpResponse> {
+    return new Promise((resolve, reject) => {
+      let isSettled = false;
+      let activeRes: http.IncomingMessage | null = null;
+      let req: http.ClientRequest;
 
-    let parsedUrl: URL;
-    try {
-      // If user forgot protocol, default to http://
-      if (!/^https?:\/\//i.test(rawUrl.trim())) {
-        parsedUrl = new URL(`http://${rawUrl.trim()}`);
-      } else {
-        parsedUrl = new URL(rawUrl.trim());
+      const isHttps = targetUrl.protocol === 'https:';
+      const requestFn = isHttps ? https.request : http.request;
+      const agent = isHttps ? httpsAgent : httpAgent;
+
+      const options: https.RequestOptions = {
+        protocol: targetUrl.protocol,
+        hostname: targetUrl.hostname,
+        port: targetUrl.port || (isHttps ? 443 : 80),
+        path: `${targetUrl.pathname}${targetUrl.search}`,
+        method: method.toUpperCase(),
+        headers: headers,
+        agent: agent,
+      };
+
+      const timer = setTimeout(() => {
+        if (!isSettled) {
+          isSettled = true;
+          const timeoutErr = new SSRFSecurityError(`Request timed out after ${timeoutMs}ms.`, 'TIMEOUT');
+          if (activeRes) {
+            activeRes.destroy(timeoutErr);
+          }
+          if (req) {
+            req.destroy(timeoutErr);
+          }
+          reject(timeoutErr);
+        }
+      }, timeoutMs);
+
+      req = requestFn(options, (res) => {
+        activeRes = res;
+        const responseHeaders: Record<string, string> = {};
+        for (const [key, val] of Object.entries(res.headers)) {
+          if (Array.isArray(val)) {
+            responseHeaders[key.toLowerCase()] = val.join(', ');
+          } else if (typeof val === 'string') {
+            responseHeaders[key.toLowerCase()] = val;
+          }
+        }
+
+        const chunks: Buffer[] = [];
+        res.on('data', (chunk) => chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)));
+
+        res.on('end', () => {
+          if (isSettled) return;
+          isSettled = true;
+          clearTimeout(timer);
+          const responseBody = Buffer.concat(chunks).toString('utf8');
+          resolve({
+            status: res.statusCode || 200,
+            statusText: res.statusMessage || (res.statusCode && res.statusCode < 400 ? 'OK' : 'Error'),
+            headers: responseHeaders,
+            body: responseBody,
+            location: responseHeaders['location'],
+          });
+        });
+
+        res.on('error', (err) => {
+          if (isSettled) return;
+          isSettled = true;
+          clearTimeout(timer);
+          reject(err);
+        });
+      });
+
+      req.on('error', (err) => {
+        if (isSettled) return;
+        isSettled = true;
+        clearTimeout(timer);
+        reject(err);
+      });
+
+      if (body && method !== 'GET' && method !== 'HEAD') {
+        req.write(body);
       }
-    } catch {
-      throw new Error(`Invalid URL format: "${rawUrl}"`);
-    }
 
-    // Protocol check: only http and https are allowed
-    if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
-      throw new Error(`Unsupported protocol "${parsedUrl.protocol}". Only HTTP and HTTPS are permitted.`);
-    }
-
-    // SSRF link-local & cloud metadata check
-    const hostname = parsedUrl.hostname.toLowerCase();
-    if (BLOCKED_HOSTS.has(hostname) || hostname.startsWith('169.254.')) {
-      throw new Error(`Access to link-local/cloud metadata host "${hostname}" is blocked for security.`);
-    }
-
-    return parsedUrl;
+      req.end();
+    });
   }
 
   /**
-   * Executes an incoming request against the target API and returns structured metrics.
+   * Executes an incoming request against the target API with SSRF defense and manual redirect verification.
    */
   public static async execute(payload: ExecuteRequestPayload): Promise<ExecuteResponsePayload> {
     const startTime = performance.now();
 
     try {
-      // 1. Validate & Parse URL
-      const targetUrl = this.validateUrl(payload.url);
+      // 1. Initial URL Validation & Parsing
+      let currentUrl = SSRFValidator.validateUrlProtocolAndFormat(payload.url);
 
-      // 2. Merge Query Parameters
+      // 2. Merge Initial Query Parameters
       if (Array.isArray(payload.queryParams)) {
         for (const param of payload.queryParams) {
           if (param.enabled && param.key && param.key.trim()) {
-            targetUrl.searchParams.append(param.key.trim(), param.value || '');
+            currentUrl.searchParams.append(param.key.trim(), param.value || '');
           }
         }
       }
@@ -68,14 +148,20 @@ export class RequestExecutorService {
         payload.auth.apiKey?.addTo === 'query' &&
         payload.auth.apiKey.key?.trim()
       ) {
-        targetUrl.searchParams.append(
+        currentUrl.searchParams.append(
           payload.auth.apiKey.key.trim(),
           payload.auth.apiKey.value || ''
         );
       }
 
-      // 3. Assemble Request Headers
-      const requestHeaders: Record<string, string> = {};
+      // 3. Pre-flight DNS & Hostname Validation
+      await SSRFValidator.validateDestination(currentUrl);
+
+      // 4. Assemble Initial Request Headers
+      let requestHeaders: Record<string, string> = {
+        'Accept': '*/*',
+        'User-Agent': 'APIForge-Proxy/1.0',
+      };
 
       if (Array.isArray(payload.headers)) {
         for (const header of payload.headers) {
@@ -96,7 +182,7 @@ export class RequestExecutorService {
         requestHeaders[payload.auth.apiKey.key.trim()] = payload.auth.apiKey.value || '';
       }
 
-      // Default Content-Type if missing when body is present
+      // Default Content-Type if missing and body is present
       const hasContentType = Object.keys(requestHeaders).some(
         (k) => k.toLowerCase() === 'content-type'
       );
@@ -109,66 +195,161 @@ export class RequestExecutorService {
         }
       }
 
-      // 4. Assemble Request Body
-      const upperMethod = (payload.method || 'GET').toUpperCase();
-      let requestBody: string | undefined = undefined;
+      // 5. Assemble Initial Request Body
+      let currentMethod = (payload.method || 'GET').toUpperCase();
+      let currentBody: string | undefined = undefined;
 
-      if (upperMethod !== 'GET' && upperMethod !== 'HEAD') {
+      if (currentMethod !== 'GET' && currentMethod !== 'HEAD') {
         if (payload.bodyType !== 'none' && payload.body && payload.body.length > 0) {
-          requestBody = payload.body;
+          currentBody = payload.body;
+          requestHeaders['Content-Length'] = Buffer.byteLength(currentBody, 'utf8').toString();
         }
       }
 
-      // 5. Configure Timeout & Dispatch
       const timeoutMs = Math.min(Math.max(payload.timeoutMs || 30000, 1000), 60000);
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
-      let response: Response;
-      try {
-        response = await fetch(targetUrl.toString(), {
-          method: upperMethod,
-          headers: requestHeaders,
-          body: requestBody,
-          signal: controller.signal,
-          redirect: 'follow',
-        });
-      } finally {
-        clearTimeout(timeoutId);
+      // 6. Execute Request with Manual Redirect Validation Loop
+      let redirectHops = 0;
+      let finalResponse: InternalHttpResponse | null = null;
+
+      while (redirectHops <= MAX_REDIRECTS) {
+        // Set Host header explicitly for target
+        requestHeaders['Host'] = currentUrl.host;
+
+        const response = await this.executeSingleRequest(
+          currentUrl,
+          currentMethod,
+          requestHeaders,
+          currentBody,
+          timeoutMs
+        );
+
+        const isRedirectStatus = [301, 302, 303, 307, 308].includes(response.status);
+
+        if (isRedirectStatus && response.location) {
+          redirectHops++;
+          if (redirectHops > MAX_REDIRECTS) {
+            throw new SSRFSecurityError(
+              `Maximum redirect limit of ${MAX_REDIRECTS} exceeded.`,
+              'TOO_MANY_REDIRECTS',
+              currentUrl.toString()
+            );
+          }
+
+          // Parse and resolve redirect location
+          let nextUrl: URL;
+          try {
+            nextUrl = new URL(response.location, currentUrl.toString());
+          } catch {
+            throw new SSRFSecurityError(
+              `Invalid redirect location URL: "${response.location}"`,
+              'INVALID_REDIRECT',
+              currentUrl.toString()
+            );
+          }
+
+          // Validate redirect protocol, hostname, and destination
+          try {
+            SSRFValidator.validateUrlProtocolAndFormat(nextUrl.toString());
+            await SSRFValidator.validateDestination(nextUrl);
+          } catch (err: any) {
+            throw new SSRFSecurityError(
+              `Redirect target "${nextUrl.toString()}" was blocked for security: ${err.message}`,
+              'SSRF_REDIRECT_BLOCKED',
+              currentUrl.toString(),
+              nextUrl.hostname
+            );
+          }
+
+          // Cross-Origin header sanitation (strip Authorization / API keys if origin changes)
+          if (nextUrl.origin !== currentUrl.origin) {
+            delete requestHeaders['Authorization'];
+            delete requestHeaders['authorization'];
+            if (payload.auth?.type === 'apiKey' && payload.auth.apiKey?.key) {
+              delete requestHeaders[payload.auth.apiKey.key];
+            }
+          }
+
+          // Adjust HTTP Method and Body for redirects per RFC semantics
+          if (response.status === 303 || ((response.status === 301 || response.status === 302) && currentMethod === 'POST')) {
+            currentMethod = 'GET';
+            currentBody = undefined;
+            delete requestHeaders['Content-Type'];
+            delete requestHeaders['content-type'];
+            delete requestHeaders['Content-Length'];
+            delete requestHeaders['content-length'];
+          }
+
+          currentUrl = nextUrl;
+          continue;
+        }
+
+        // Not a redirect or no location header: this is the final response
+        finalResponse = response;
+        break;
       }
 
-      const responseText = await response.text();
+      if (!finalResponse) {
+        throw new Error('Failed to retrieve response from target server.');
+      }
+
       const endTime = performance.now();
       const latency = Math.round(endTime - startTime);
-      const responseSize = Buffer.byteLength(responseText, 'utf8');
-
-      // Normalize response headers
-      const responseHeadersDict: Record<string, string> = {};
-      response.headers.forEach((value, key) => {
-        responseHeadersDict[key] = value;
-      });
+      const responseSize = Buffer.byteLength(finalResponse.body, 'utf8');
 
       return {
-        status: response.status,
-        statusText: response.statusText || (response.ok ? 'OK' : 'Error'),
-        headers: responseHeadersDict,
+        status: finalResponse.status,
+        statusText: finalResponse.statusText,
+        headers: finalResponse.headers,
         time: latency,
         size: responseSize,
-        body: responseText,
-        isError: !response.ok,
+        body: finalResponse.body,
+        isError: finalResponse.status >= 400,
       };
     } catch (err: any) {
       const endTime = performance.now();
       const latency = Math.round(endTime - startTime);
 
+      // SSRF Security Blocked (Direct or Redirect)
+      if (
+        err.code === 'SSRF_BLOCKED' ||
+        err.code === 'SSRF_REDIRECT_BLOCKED' ||
+        err.code === 'INVALID_PROTOCOL' ||
+        err.code === 'INVALID_URL' ||
+        err.code === 'INVALID_REDIRECT' ||
+        err.code === 'TOO_MANY_REDIRECTS'
+      ) {
+        const errorPayload = {
+          error: err.code === 'SSRF_REDIRECT_BLOCKED' ? 'Blocked Redirect Target' : 'SSRF Security Violation',
+          code: err.code,
+          message: err.message || 'Access to the requested destination is blocked for security.',
+          target: err.target || payload.url,
+          blockedAddress: err.blockedAddress,
+        };
+        const errorBody = JSON.stringify(errorPayload, null, 2);
+
+        return {
+          status: 400,
+          statusText: 'Bad Request (Security Violation)',
+          headers: { 'content-type': 'application/json' },
+          time: latency,
+          size: Buffer.byteLength(errorBody, 'utf8'),
+          body: errorBody,
+          isError: true,
+          errorMessage: errorPayload.message,
+        };
+      }
+
       // Timeout detection
-      if (err.name === 'AbortError' || err.name === 'TimeoutError') {
+      if (err.code === 'TIMEOUT' || err.name === 'AbortError' || err.name === 'TimeoutError') {
         const errorPayload = {
           error: 'Gateway Timeout',
+          code: 'TIMEOUT',
           message: `The target server failed to respond within ${payload.timeoutMs || 30000}ms.`,
           suggestion: 'Check if the target server is active and reachable, or increase the timeout duration.',
         };
         const errorBody = JSON.stringify(errorPayload, null, 2);
+
         return {
           status: 504,
           statusText: 'Gateway Timeout',
@@ -181,26 +362,29 @@ export class RequestExecutorService {
         };
       }
 
-      // URL Validation or SSRF Blocked
-      if (err.message && (err.message.includes('blocked for security') || err.message.includes('Invalid URL') || err.message.includes('URL cannot be empty'))) {
+      // DNS Resolution Failure
+      if (err.code === 'DNS_LOOKUP_FAILED' || err.code === 'ENOTFOUND') {
         const errorPayload = {
-          error: 'Bad Request',
-          message: err.message,
+          error: 'DNS Lookup Failed',
+          code: 'DNS_LOOKUP_FAILED',
+          message: err.message || 'Could not resolve destination hostname.',
+          target: payload.url,
         };
         const errorBody = JSON.stringify(errorPayload, null, 2);
+
         return {
-          status: 400,
-          statusText: 'Bad Request',
+          status: 502,
+          statusText: 'Bad Gateway (DNS Failure)',
           headers: { 'content-type': 'application/json' },
           time: latency,
           size: Buffer.byteLength(errorBody, 'utf8'),
           body: errorBody,
           isError: true,
-          errorMessage: err.message,
+          errorMessage: errorPayload.message,
         };
       }
 
-      // Network / Connection errors (DNS failure, Connection refused, etc.)
+      // General Network Connection Failure
       const errorCode = err.cause?.code || err.code || 'CONNECTION_FAILED';
       const errorPayload = {
         error: 'Network Error',

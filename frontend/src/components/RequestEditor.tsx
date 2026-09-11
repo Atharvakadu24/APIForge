@@ -323,7 +323,7 @@ export default function RequestEditor({
             type="text"
             value={url}
             onChange={(e) => setUrl(e.target.value)}
-            placeholder="Enter request URL (e.g. http://localhost:3001/api/health)"
+            placeholder="Enter request URL (e.g. https://jsonplaceholder.typicode.com/todos/1)"
             className="w-full bg-slate-950 border border-slate-800 text-slate-200 placeholder-slate-600 rounded-lg px-3.5 py-2 text-xs font-mono focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/35 transition"
           />
         </div>

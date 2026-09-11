@@ -38,7 +38,7 @@ const generateUniqueId = () => {
 
 const DEFAULT_REQUEST: ApiRequest = {
   method: 'GET',
-  url: 'http://localhost:3001/api/health',
+  url: 'https://jsonplaceholder.typicode.com/todos/1',
   queryParams: [],
   headers: [
     { id: 'header-content-type', key: 'Content-Type', value: 'application/json', enabled: true, description: '' },
