@@ -1,4 +1,9 @@
 import React, { useState } from 'react';
+import type { User } from '@supabase/supabase-js';
+import { AuthProvider } from './contexts/AuthContext';
+import { useAuth } from './hooks/useAuth';
+import AuthScreen from './components/AuthScreen';
+import LoadingScreen from './components/LoadingScreen';
 import AppShell from './components/AppShell';
 import RequestEditor from './components/RequestEditor';
 import ResponsePanel from './components/ResponsePanel';
@@ -51,7 +56,12 @@ const DEFAULT_REQUEST: ApiRequest = {
   },
 };
 
-function App() {
+interface AuthenticatedWorkspaceProps {
+  user: User;
+  onSignOut: () => void;
+}
+
+function AuthenticatedWorkspace({ user, onSignOut }: AuthenticatedWorkspaceProps) {
   const [request, setRequest] = useState<ApiRequest>(() => cloneRequest(DEFAULT_REQUEST));
   const [isSending, setIsSending] = useState(false);
   const [response, setResponse] = useState<ResponseData | null>(null);
@@ -219,11 +229,12 @@ function App() {
       const data: ResponseData = await res.json();
       setResponse(data);
       recordHistory(request, data, Math.round(performance.now() - startTime));
-    } catch (err: any) {
+    } catch (err: unknown) {
       const endTime = performance.now();
+      const errorMsg = err instanceof Error ? err.message : 'Failed to reach APIForge backend at http://localhost:3001';
       const errPayload = {
         error: 'Backend Proxy Unavailable',
-        message: err.message || 'Failed to reach APIForge backend at http://localhost:3001',
+        message: errorMsg,
         suggestion: 'Ensure the APIForge backend server is running.',
       };
       const errBody = JSON.stringify(errPayload, null, 2);
@@ -235,7 +246,7 @@ function App() {
         size: new Blob([errBody]).size,
         body: errBody,
         isError: true,
-        errorMessage: err.message,
+        errorMessage: errorMsg,
       };
 
       setResponse(errorResponse);
@@ -503,21 +514,25 @@ function App() {
       activeEnvironmentId={activeEnvironmentId}
       onSelectEnvironment={handleSelectEnvironment}
       onOpenEnvironmentManager={() => setIsEnvironmentModalOpen(true)}
+      user={user}
+      onSignOut={onSignOut}
     >
       {/* Centered Workspace layout */}
       <div className="max-w-5xl w-full mx-auto flex flex-col space-y-4 h-full">
-        {/* Development Status banner */}
+        {/* Workspace status bar */}
         <div className="bg-slate-900/40 border border-slate-850 px-4 py-2 rounded-lg flex items-center justify-between text-xs text-slate-400 select-none">
           <div className="flex items-center space-x-2">
             <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-            <span className="font-semibold text-slate-350">Status: Backend Engine Active</span>
+            <span className="font-semibold text-slate-300">Status: Backend Engine Active</span>
             {activeEnvironment && (
               <span className="text-[10px] font-mono bg-indigo-950/60 text-indigo-300 border border-indigo-800/40 px-2 py-0.5 rounded-full ml-2">
                 Env: {activeEnvironment.name}
               </span>
             )}
           </div>
-          <span className="text-[10px] text-slate-500 font-mono">Phase 2: Environment Variables</span>
+          <div className="flex items-center space-x-2">
+            <span className="text-[10px] text-slate-500 font-mono">Supabase Auth Connected</span>
+          </div>
         </div>
 
         {/* Workspace Panels (Request Editor + Response Inspector) */}
@@ -610,4 +625,24 @@ function App() {
   );
 }
 
-export default App;
+function AppContent() {
+  const { user, loading, signOut } = useAuth();
+
+  if (loading) {
+    return <LoadingScreen />;
+  }
+
+  if (!user) {
+    return <AuthScreen />;
+  }
+
+  return <AuthenticatedWorkspace user={user} onSignOut={signOut} />;
+}
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <AppContent />
+    </AuthProvider>
+  );
+}

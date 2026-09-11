@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
+import type { User } from '@supabase/supabase-js';
 import type { Environment } from '../types/environment';
 
 interface HeaderProps {
@@ -6,6 +7,8 @@ interface HeaderProps {
   activeEnvironmentId?: string | null;
   onSelectEnvironment?: (id: string | null) => void;
   onOpenEnvironmentManager?: () => void;
+  user?: User | null;
+  onSignOut?: () => void;
 }
 
 export default function Header({
@@ -13,23 +16,49 @@ export default function Header({
   activeEnvironmentId = null,
   onSelectEnvironment,
   onOpenEnvironmentManager,
+  user = null,
+  onSignOut,
 }: HeaderProps) {
   const [isEnvDropdownOpen, setIsEnvDropdownOpen] = useState(false);
-  const dropdownRef = useRef<HTMLDivElement>(null);
+  const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
+
+  const envDropdownRef = useRef<HTMLDivElement>(null);
+  const userMenuRef = useRef<HTMLDivElement>(null);
 
   const activeEnv = environments.find((e) => e.id === activeEnvironmentId);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+      if (
+        envDropdownRef.current &&
+        !envDropdownRef.current.contains(e.target as Node)
+      ) {
         setIsEnvDropdownOpen(false);
       }
+      if (
+        userMenuRef.current &&
+        !userMenuRef.current.contains(e.target as Node)
+      ) {
+        setIsUserMenuOpen(false);
+      }
     };
-    if (isEnvDropdownOpen) {
-      document.addEventListener('mousedown', handleClickOutside);
-    }
+
+    document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [isEnvDropdownOpen]);
+  }, []);
+
+  // Compute initials from user email
+  const getUserInitials = (emailStr?: string | null) => {
+    if (!emailStr) return 'AF';
+    const parts = emailStr.split('@')[0].split(/[._-]/);
+    if (parts.length >= 2 && parts[0] && parts[1]) {
+      return (parts[0][0] + parts[1][0]).toUpperCase();
+    }
+    return emailStr.substring(0, 2).toUpperCase();
+  };
+
+  const userEmail = user?.email || 'developer@apiforge.dev';
+  const userInitials = getUserInitials(user?.email);
 
   return (
     <header className="h-12 border-b border-slate-800 bg-slate-900 px-4 flex items-center justify-between select-none shrink-0 z-50">
@@ -43,12 +72,12 @@ export default function Header({
             APIForge
           </span>
         </div>
-        
+
         <div className="h-4 w-px bg-slate-800" />
-        
+
         {/* Workspace selector */}
         <div className="flex items-center space-x-1.5 cursor-pointer hover:bg-slate-800 px-2 py-1 rounded transition text-xs text-slate-300 font-medium">
-          <svg className="w-3.5 h-3.5 text-indigo-450" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <svg className="w-3.5 h-3.5 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
           </svg>
           <span>Personal Workspace</span>
@@ -76,7 +105,7 @@ export default function Header({
       {/* Right section: Environment Selector & User Profile */}
       <div className="flex items-center space-x-3">
         {/* Environment Selector Dropdown */}
-        <div className="relative" ref={dropdownRef}>
+        <div className="relative" ref={envDropdownRef}>
           <div className="flex items-center bg-slate-950 border border-slate-800 rounded-lg p-0.5">
             <button
               type="button"
@@ -174,11 +203,61 @@ export default function Header({
         {/* Divider */}
         <div className="h-4 w-px bg-slate-800" />
 
-        {/* User avatar */}
-        <div className="flex items-center space-x-2">
-          <div className="w-6.5 h-6.5 rounded-full bg-indigo-650 hover:bg-indigo-600 transition flex items-center justify-center font-bold text-white text-[10px] cursor-pointer ring-1 ring-slate-800">
-            AD
-          </div>
+        {/* User Profile & Logout Area */}
+        <div className="relative" ref={userMenuRef}>
+          <button
+            type="button"
+            onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
+            className="flex items-center space-x-2 p-1 rounded-lg hover:bg-slate-800/80 transition cursor-pointer"
+            title={`Signed in as ${userEmail}`}
+          >
+            <div className="w-7 h-7 rounded-full bg-gradient-to-tr from-indigo-600 to-purple-600 flex items-center justify-center font-bold text-white text-[10px] shadow-sm ring-1 ring-slate-700/80">
+              {userInitials}
+            </div>
+            <svg className="w-3 h-3 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+
+          {/* User Popover Menu */}
+          {isUserMenuOpen && (
+            <div className="absolute right-0 mt-2 w-64 bg-slate-900 border border-slate-800 rounded-xl shadow-2xl py-2 z-50 text-xs animate-fade-in divide-y divide-slate-800/80">
+              {/* User info header */}
+              <div className="px-3.5 py-2.5">
+                <div className="flex items-center space-x-2.5">
+                  <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-indigo-600 to-purple-600 flex items-center justify-center font-bold text-white text-xs shrink-0">
+                    {userInitials}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-slate-200 font-semibold truncate" title={userEmail}>
+                      {userEmail}
+                    </p>
+                    <div className="flex items-center space-x-1.5 mt-0.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                      <span className="text-[10px] text-slate-400 font-mono">Supabase Auth</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Sign out action */}
+              <div className="p-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsUserMenuOpen(false);
+                    onSignOut?.();
+                  }}
+                  className="w-full flex items-center space-x-2 px-3 py-2 text-rose-400 hover:text-rose-300 hover:bg-rose-950/30 rounded-lg transition cursor-pointer font-semibold text-xs"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                  </svg>
+                  <span>Sign Out</span>
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </header>

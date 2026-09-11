@@ -1,4 +1,5 @@
 import React from 'react';
+import type { User } from '@supabase/supabase-js';
 import Header from './Header';
 import Sidebar from './Sidebar';
 import type { HistoryItem } from '../types/history';
@@ -24,6 +25,8 @@ interface AppShellProps {
   activeEnvironmentId: string | null;
   onSelectEnvironment: (id: string | null) => void;
   onOpenEnvironmentManager: () => void;
+  user?: User | null;
+  onSignOut?: () => void;
 }
 
 export default function AppShell({
@@ -45,6 +48,8 @@ export default function AppShell({
   activeEnvironmentId,
   onSelectEnvironment,
   onOpenEnvironmentManager,
+  user = null,
+  onSignOut,
 }: AppShellProps) {
   return (
     <div className="h-screen w-screen flex flex-col bg-slate-950 overflow-hidden text-slate-100">
@@ -54,6 +59,8 @@ export default function AppShell({
         activeEnvironmentId={activeEnvironmentId}
         onSelectEnvironment={onSelectEnvironment}
         onOpenEnvironmentManager={onOpenEnvironmentManager}
+        user={user}
+        onSignOut={onSignOut}
       />
 
       {/* Main Workspace Frame */}
