@@ -16,6 +16,7 @@ import type { HistoryItem } from './types/history';
 import type { Collection, SavedRequest } from './types/collection';
 import type { Environment, EnvironmentVariable } from './types/environment';
 import * as collectionService from './services/collectionService';
+import * as environmentService from './services/environmentService';
 import {
   loadHistoryFromStorage,
   saveHistoryToStorage,
@@ -24,8 +25,6 @@ import {
   MAX_HISTORY_ITEMS,
 } from './utils/historyStorage';
 import {
-  loadEnvironmentsFromStorage,
-  saveEnvironmentsToStorage,
   loadActiveEnvironmentId,
   saveActiveEnvironmentId,
 } from './utils/environmentStorage';
@@ -73,12 +72,9 @@ function AuthenticatedWorkspace({ user, onSignOut }: AuthenticatedWorkspaceProps
   const [activeSavedRequestId, setActiveSavedRequestId] = useState<string | null>(null);
   const [cloudError, setCloudError] = useState<string | null>(null);
 
-  // Environments State (Persisted in localStorage)
-  const [environments, setEnvironments] = useState<Environment[]>(() => loadEnvironmentsFromStorage());
-  const [activeEnvironmentId, setActiveEnvironmentId] = useState<string | null>(() => {
-    const loadedEnvs = loadEnvironmentsFromStorage();
-    return loadActiveEnvironmentId(loadedEnvs);
-  });
+  // Environments State (Persisted in Supabase PostgreSQL)
+  const [environments, setEnvironments] = useState<Environment[]>([]);
+  const [activeEnvironmentId, setActiveEnvironmentId] = useState<string | null>(null);
   const [isEnvironmentModalOpen, setIsEnvironmentModalOpen] = useState(false);
 
   // Modals State
@@ -111,32 +107,32 @@ function AuthenticatedWorkspace({ user, onSignOut }: AuthenticatedWorkspaceProps
   useEffect(() => {
     let isCancelled = false;
 
-    async function fetchCollections() {
-      try {
-        const { data, error } = await collectionService.getCollections();
+    async function initializeCloudWorkspace() {
+      setIsLoadingCollections(true);
 
-        if (error) {
+      // 1. Fetch & sync Collections
+      try {
+        const { data: cloudCols, error: colsErr } = await collectionService.getCollections();
+
+        if (colsErr) {
           if (!isCancelled) {
-            setCloudError(`Failed to load collections from Supabase: ${error.message}`);
+            setCloudError(`Failed to load collections from Supabase: ${colsErr.message}`);
             setIsLoadingCollections(false);
           }
-          return;
-        }
+        } else {
+          const initialCloud = cloudCols || [];
+          const migrationResult = await collectionService.syncOrMigrateLegacyCollections(
+            user.id,
+            initialCloud
+          );
 
-        const initialCloud = data || [];
-
-        // Check for legacy localStorage data and safely sync if needed
-        const migrationResult = await collectionService.syncOrMigrateLegacyCollections(
-          user.id,
-          initialCloud
-        );
-
-        if (!isCancelled) {
-          if (migrationResult.error) {
-            setCloudError(`Migration notice: ${migrationResult.error.message}`);
+          if (!isCancelled) {
+            if (migrationResult.error) {
+              setCloudError(`Collections migration notice: ${migrationResult.error.message}`);
+            }
+            setCollections(migrationResult.collections);
+            setIsLoadingCollections(false);
           }
-          setCollections(migrationResult.collections);
-          setIsLoadingCollections(false);
         }
       } catch (err: unknown) {
         if (!isCancelled) {
@@ -145,9 +141,43 @@ function AuthenticatedWorkspace({ user, onSignOut }: AuthenticatedWorkspaceProps
           setIsLoadingCollections(false);
         }
       }
+
+      // 2. Fetch & sync Environments
+      try {
+        const { data: cloudEnvs, error: envsErr } = await environmentService.getEnvironments();
+
+        if (envsErr) {
+          if (!isCancelled) {
+            setCloudError(`Failed to load environments from Supabase: ${envsErr.message}`);
+          }
+        } else {
+          const initialCloud = cloudEnvs || [];
+          const migrationResult = await environmentService.syncOrMigrateLegacyEnvironments(
+            user.id,
+            initialCloud
+          );
+
+          if (!isCancelled) {
+            if (migrationResult.error) {
+              setCloudError(`Environments migration notice: ${migrationResult.error.message}`);
+            }
+            const resolvedEnvs = migrationResult.environments;
+            setEnvironments(resolvedEnvs);
+
+            // Validate stored active environment ID against loaded cloud environments
+            const storedActiveId = loadActiveEnvironmentId(resolvedEnvs);
+            setActiveEnvironmentId(storedActiveId);
+          }
+        }
+      } catch (err: unknown) {
+        if (!isCancelled) {
+          const msg = err instanceof Error ? err.message : 'Unknown error loading environments';
+          setCloudError(msg);
+        }
+      }
     }
 
-    fetchCollections();
+    initializeCloudWorkspace();
 
     return () => {
       isCancelled = true;
@@ -301,63 +331,64 @@ function AuthenticatedWorkspace({ user, onSignOut }: AuthenticatedWorkspaceProps
     }
   };
 
-  // Environment Handlers (LocalStorage)
+  // Environment Handlers (Supabase PostgreSQL)
   const handleSelectEnvironment = (id: string | null) => {
     setActiveEnvironmentId(id);
     saveActiveEnvironmentId(id);
   };
 
-  const handleCreateEnvironment = (name: string): string => {
-    const newId = generateUniqueId();
-    const newEnv: Environment = {
-      id: newId,
-      name,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-      variables: [],
-    };
-    setEnvironments((prev) => {
-      const next = [...prev, newEnv];
-      saveEnvironmentsToStorage(next);
-      return next;
-    });
-    if (!activeEnvironmentId) {
-      setActiveEnvironmentId(newId);
-      saveActiveEnvironmentId(newId);
+  const handleCreateEnvironment = async (name: string): Promise<string> => {
+    setCloudError(null);
+    const { data, error } = await environmentService.createEnvironment(name);
+    if (error || !data) {
+      const msg = `Failed to create environment: ${error?.message || 'Unknown error'}`;
+      setCloudError(msg);
+      throw new Error(msg);
     }
-    return newId;
+    setEnvironments((prev) => [...prev, data]);
+    if (!activeEnvironmentId) {
+      setActiveEnvironmentId(data.id);
+      saveActiveEnvironmentId(data.id);
+    }
+    return data.id;
   };
 
-  const handleRenameEnvironment = (id: string, newName: string) => {
-    setEnvironments((prev) => {
-      const next = prev.map((e) =>
-        e.id === id ? { ...e, name: newName, updatedAt: Date.now() } : e
-      );
-      saveEnvironmentsToStorage(next);
-      return next;
-    });
+  const handleRenameEnvironment = async (id: string, newName: string) => {
+    setCloudError(null);
+    const { data, error } = await environmentService.renameEnvironment(id, newName);
+    if (error || !data) {
+      setCloudError(`Failed to rename environment: ${error?.message || 'Unknown error'}`);
+      return;
+    }
+    setEnvironments((prev) =>
+      prev.map((e) => (e.id === id ? { ...e, name: data.name, updatedAt: data.updatedAt } : e))
+    );
   };
 
-  const handleDeleteEnvironment = (id: string) => {
-    setEnvironments((prev) => {
-      const next = prev.filter((e) => e.id !== id);
-      saveEnvironmentsToStorage(next);
-      return next;
-    });
+  const handleDeleteEnvironment = async (id: string) => {
+    setCloudError(null);
+    const { error } = await environmentService.deleteEnvironment(id);
+    if (error) {
+      setCloudError(`Failed to delete environment: ${error.message}`);
+      return;
+    }
+    setEnvironments((prev) => prev.filter((e) => e.id !== id));
     if (activeEnvironmentId === id) {
       setActiveEnvironmentId(null);
       saveActiveEnvironmentId(null);
     }
   };
 
-  const handleUpdateEnvironmentVariables = (envId: string, variables: EnvironmentVariable[]) => {
-    setEnvironments((prev) => {
-      const next = prev.map((e) =>
-        e.id === envId ? { ...e, variables, updatedAt: Date.now() } : e
-      );
-      saveEnvironmentsToStorage(next);
-      return next;
-    });
+  const handleUpdateEnvironmentVariables = async (envId: string, variables: EnvironmentVariable[]) => {
+    setCloudError(null);
+    const { data, error } = await environmentService.updateEnvironmentVariables(envId, variables);
+    if (error || !data) {
+      setCloudError(`Failed to save environment variables: ${error?.message || 'Unknown error'}`);
+      return;
+    }
+    setEnvironments((prev) =>
+      prev.map((e) => (e.id === envId ? data : e))
+    );
   };
 
   // History Actions (LocalStorage)
@@ -594,9 +625,9 @@ function AuthenticatedWorkspace({ user, onSignOut }: AuthenticatedWorkspaceProps
             )}
           </div>
           <div className="flex items-center space-x-2">
-            <span className="text-[10px] text-indigo-350 font-mono flex items-center space-x-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-indigo-400" />
-              <span>Supabase Collections Active</span>
+            <span className="text-[10px] text-indigo-350 font-mono flex items-center space-x-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+              <span>Cloud Sync: Collections & Environments Active</span>
             </span>
           </div>
         </div>

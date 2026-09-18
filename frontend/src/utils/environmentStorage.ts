@@ -80,3 +80,19 @@ export function saveActiveEnvironmentId(id: string | null): void {
     console.error('Failed to save active environment ID:', err);
   }
 }
+
+/**
+ * Clears all environments from browser localStorage.
+ */
+export function clearEnvironmentsFromStorage(): void {
+  if (typeof window === 'undefined' || !window.localStorage) {
+    return;
+  }
+  try {
+    localStorage.removeItem(ENVIRONMENTS_STORAGE_KEY);
+  } catch (err) {
+    console.error('Failed to clear environments from localStorage:', err);
+  }
+}
+
+

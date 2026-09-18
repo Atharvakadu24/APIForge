@@ -1,16 +1,28 @@
 import React, { useState, useEffect } from 'react';
 import type { Environment, EnvironmentVariable } from '../types/environment';
+import { ensureValidUuid } from '../services/environmentService';
+
+const generateVarId = () => ensureValidUuid();
+
+const createEmptyVariable = (): EnvironmentVariable => ({
+  id: generateVarId(),
+  name: '',
+  value: '',
+  enabled: true,
+  createdAt: 0,
+  updatedAt: 0,
+});
 
 interface EnvironmentModalProps {
   isOpen: boolean;
   environments: Environment[];
   activeEnvironmentId: string | null;
   onClose: () => void;
-  onCreateEnvironment: (name: string) => string;
-  onRenameEnvironment: (id: string, newName: string) => void;
-  onDeleteEnvironment: (id: string) => void;
+  onCreateEnvironment: (name: string) => Promise<string> | string;
+  onRenameEnvironment: (id: string, newName: string) => Promise<void> | void;
+  onDeleteEnvironment: (id: string) => Promise<void> | void;
   onSelectEnvironment: (id: string | null) => void;
-  onUpdateVariables: (envId: string, variables: EnvironmentVariable[]) => void;
+  onUpdateVariables: (envId: string, variables: EnvironmentVariable[]) => Promise<void> | void;
 }
 
 export default function EnvironmentModal({
@@ -63,8 +75,13 @@ function EnvironmentModalContent({
   const [editingEnvName, setEditingEnvName] = useState('');
   const [revealedValues, setRevealedValues] = useState<Record<string, boolean>>({});
   const [confirmDeleteEnvId, setConfirmDeleteEnvId] = useState<string | null>(null);
+  const effectiveSelectedEnvId = environments.some((e) => e.id === selectedEnvId)
+    ? selectedEnvId
+    : environments.length > 0
+    ? environments[0].id
+    : '';
 
-  const activeSelectedEnv = environments.find((e) => e.id === selectedEnvId) || (environments.length > 0 ? environments[0] : null);
+  const activeSelectedEnv = environments.find((e) => e.id === effectiveSelectedEnvId) || null;
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -73,14 +90,6 @@ function EnvironmentModalContent({
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [onClose]);
-
-  // Helper to generate IDs
-  const generateVarId = () => {
-    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-      return crypto.randomUUID();
-    }
-    return `var-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
-  };
 
   // Check duplicate variable names within the selected environment
   const getDuplicateNames = (variables: EnvironmentVariable[]) => {
@@ -103,20 +112,22 @@ function EnvironmentModalContent({
   const duplicateNames = activeSelectedEnv ? getDuplicateNames(activeSelectedEnv.variables) : new Set<string>();
 
   // Handlers for environment creation
-  const handleSaveNewEnv = (e: React.FormEvent) => {
+  const handleSaveNewEnv = async (e: React.FormEvent) => {
     e.preventDefault();
     if (newEnvName.trim()) {
-      const createdId = onCreateEnvironment(newEnvName.trim());
-      setSelectedEnvId(createdId);
+      const createdId = await onCreateEnvironment(newEnvName.trim());
+      if (createdId) {
+        setSelectedEnvId(createdId);
+      }
       setNewEnvName('');
       setIsCreatingEnv(false);
     }
   };
 
   // Handlers for environment rename
-  const handleSaveRenameEnv = (envId: string) => {
+  const handleSaveRenameEnv = async (envId: string) => {
     if (editingEnvName.trim()) {
-      onRenameEnvironment(envId, editingEnvName.trim());
+      await onRenameEnvironment(envId, editingEnvName.trim());
       setEditingEnvId(null);
       setEditingEnvName('');
     }
@@ -125,21 +136,13 @@ function EnvironmentModalContent({
   // Variable mutators
   const handleAddVariable = () => {
     if (!activeSelectedEnv) return;
-    const newVar: EnvironmentVariable = {
-      id: generateVarId(),
-      name: '',
-      value: '',
-      enabled: true,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-    };
-    onUpdateVariables(activeSelectedEnv.id, [...activeSelectedEnv.variables, newVar]);
+    onUpdateVariables(activeSelectedEnv.id, [...activeSelectedEnv.variables, createEmptyVariable()]);
   };
 
   const handleUpdateVariableField = (varId: string, field: 'name' | 'value' | 'enabled', value: any) => {
     if (!activeSelectedEnv) return;
     const updated = activeSelectedEnv.variables.map((v) =>
-      v.id === varId ? { ...v, [field]: value, updatedAt: Date.now() } : v
+      v.id === varId ? { ...v, [field]: value } : v
     );
     onUpdateVariables(activeSelectedEnv.id, updated);
   };
@@ -532,15 +535,17 @@ function EnvironmentModalContent({
               </button>
               <button
                 type="button"
-                onClick={() => {
-                  onDeleteEnvironment(confirmDeleteEnvId);
-                  if (selectedEnvId === confirmDeleteEnvId) {
-                    const remaining = environments.filter((e) => e.id !== confirmDeleteEnvId);
-                    setSelectedEnvId(remaining.length > 0 ? remaining[0].id : '');
+                onClick={async () => {
+                  if (confirmDeleteEnvId) {
+                    await onDeleteEnvironment(confirmDeleteEnvId);
+                    if (selectedEnvId === confirmDeleteEnvId) {
+                      const remaining = environments.filter((e) => e.id !== confirmDeleteEnvId);
+                      setSelectedEnvId(remaining.length > 0 ? remaining[0].id : '');
+                    }
+                    setConfirmDeleteEnvId(null);
                   }
-                  setConfirmDeleteEnvId(null);
                 }}
-                className="px-3.5 py-1.5 text-xs bg-rose-600 hover:bg-rose-500 text-white font-semibold rounded-lg"
+                className="px-3.5 py-1.5 text-xs bg-rose-600 hover:bg-rose-500 text-white font-semibold rounded-lg cursor-pointer"
               >
                 Delete
               </button>
