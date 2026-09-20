@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import CodeSnippetModal from './CodeSnippetModal';
 import type { HttpMethod, KeyValueEntry, RequestAuth, RequestBodyType, AuthType } from '../types/request';
 
 interface RequestEditorProps {
@@ -87,6 +88,7 @@ export default function RequestEditor({
   const [activeTab, setActiveTab] = useState<'params' | 'headers' | 'body' | 'auth'>('params');
   const [showBearerToken, setShowBearerToken] = useState(false);
   const [showApiKeyValue, setShowApiKeyValue] = useState(false);
+  const [isCodeModalOpen, setIsCodeModalOpen] = useState(false);
 
   const methods = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'];
 
@@ -298,7 +300,7 @@ export default function RequestEditor({
       {/* Top Request Composer */}
       <div className="flex items-center space-x-2">
         {/* Method Selector Dropdown */}
-        <div className="relative">
+        <div className="relative shrink-0">
           <select
             value={method}
             onChange={(e) => setMethod(e.target.value as HttpMethod)}
@@ -318,7 +320,7 @@ export default function RequestEditor({
         </div>
 
         {/* URL Input field */}
-        <div className="flex-1">
+        <div className="flex-1 min-w-0">
           <input
             type="text"
             value={url}
@@ -333,7 +335,7 @@ export default function RequestEditor({
           <button
             type="button"
             onClick={onSave}
-            className="bg-slate-800 hover:bg-slate-750 text-slate-300 hover:text-white font-semibold text-xs py-2 px-3.5 rounded-lg border border-slate-700/80 transition duration-150 flex items-center space-x-1.5 cursor-pointer shadow-sm"
+            className="bg-slate-800 hover:bg-slate-750 text-slate-300 hover:text-white font-semibold text-xs py-2 px-3.5 rounded-lg border border-slate-700/80 transition duration-150 flex items-center space-x-1.5 cursor-pointer shadow-sm shrink-0"
             title="Save request to collection"
           >
             <svg className="w-3.5 h-3.5 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -343,11 +345,24 @@ export default function RequestEditor({
           </button>
         )}
 
+        {/* Code Snippet Button */}
+        <button
+          type="button"
+          onClick={() => setIsCodeModalOpen(true)}
+          className="bg-slate-800 hover:bg-slate-750 text-slate-300 hover:text-white font-semibold text-xs py-2 px-3.5 rounded-lg border border-slate-700/80 transition duration-150 flex items-center space-x-1.5 cursor-pointer shadow-sm shrink-0"
+          title="Generate code snippet (cURL, fetch, Python, Axios)"
+        >
+          <svg className="w-3.5 h-3.5 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+          </svg>
+          <span>Code</span>
+        </button>
+
         {/* Send Button */}
         <button
           onClick={onSend}
           disabled={isSending}
-          className="bg-indigo-600 hover:bg-indigo-500 disabled:bg-indigo-850 text-white font-semibold text-xs py-2 px-5 rounded-lg shadow-lg shadow-indigo-650/15 hover:shadow-indigo-500/25 transition duration-200 flex items-center space-x-1.5 cursor-pointer disabled:cursor-not-allowed"
+          className="bg-indigo-600 hover:bg-indigo-500 disabled:bg-indigo-850 text-white font-semibold text-xs py-2 px-5 rounded-lg shadow-lg shadow-indigo-650/15 hover:shadow-indigo-500/25 transition duration-200 flex items-center space-x-1.5 cursor-pointer disabled:cursor-not-allowed shrink-0"
         >
           {isSending ? (
             <>
@@ -966,6 +981,21 @@ export default function RequestEditor({
           )}
         </div>
       </div>
+
+      {/* Code Snippet Modal */}
+      <CodeSnippetModal
+        isOpen={isCodeModalOpen}
+        onClose={() => setIsCodeModalOpen(false)}
+        request={{
+          method,
+          url,
+          queryParams,
+          headers,
+          bodyType,
+          body,
+          auth,
+        }}
+      />
 
       {/* Autocomplete Datalists */}
       <datalist id="common-headers">
