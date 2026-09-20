@@ -13,3 +13,19 @@ export interface HistoryItem {
   request: ApiRequest;
   response?: ResponseData | null;
 }
+
+export interface DatabaseHistoryRow {
+  id: string;
+  user_id: string;
+  method: string;
+  url: string;
+  status: number;
+  status_text: string;
+  latency: number;
+  size: number;
+  is_error: boolean;
+  request: ApiRequest;
+  response: ResponseData | null;
+  created_at: string;
+}
+

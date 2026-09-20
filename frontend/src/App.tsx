@@ -17,10 +17,8 @@ import type { Collection, SavedRequest } from './types/collection';
 import type { Environment, EnvironmentVariable } from './types/environment';
 import * as collectionService from './services/collectionService';
 import * as environmentService from './services/environmentService';
+import * as historyService from './services/historyService';
 import {
-  loadHistoryFromStorage,
-  saveHistoryToStorage,
-  clearHistoryFromStorage,
   cloneRequest,
   MAX_HISTORY_ITEMS,
 } from './utils/historyStorage';
@@ -30,16 +28,10 @@ import {
 } from './utils/environmentStorage';
 import { resolveApiRequest } from './utils/variableResolver';
 
-const generateUniqueId = () => {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-    return crypto.randomUUID();
-  }
-  return `${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
-};
 
 const DEFAULT_REQUEST: ApiRequest = {
   method: 'GET',
-  url: 'https://jsonplaceholder.typicode.com/todos/1',
+  url: '',
   queryParams: [],
   headers: [
     { id: 'header-content-type', key: 'Content-Type', value: 'application/json', enabled: true, description: '' },
@@ -61,9 +53,10 @@ function AuthenticatedWorkspace({ user, onSignOut }: AuthenticatedWorkspaceProps
   const [request, setRequest] = useState<ApiRequest>(() => cloneRequest(DEFAULT_REQUEST));
   const [isSending, setIsSending] = useState(false);
   const [response, setResponse] = useState<ResponseData | null>(null);
+  const [editorResetSignal, setEditorResetSignal] = useState(0);
   
-  // History State (Persisted in localStorage)
-  const [history, setHistory] = useState<HistoryItem[]>(() => loadHistoryFromStorage());
+  // History State (Persisted in Supabase PostgreSQL)
+  const [history, setHistory] = useState<HistoryItem[]>([]);
   const [selectedHistoryId, setSelectedHistoryId] = useState<string | null>(null);
 
   // Collections State (Persisted in Supabase PostgreSQL)
@@ -175,6 +168,35 @@ function AuthenticatedWorkspace({ user, onSignOut }: AuthenticatedWorkspaceProps
           setCloudError(msg);
         }
       }
+
+      // 3. Fetch & sync History
+      try {
+        const { data: cloudHistory, error: historyErr } = await historyService.getHistory();
+
+        if (historyErr) {
+          if (!isCancelled) {
+            setCloudError(`Failed to load request history from Supabase: ${historyErr.message}`);
+          }
+        } else {
+          const initialHistory = cloudHistory || [];
+          const migrationResult = await historyService.syncOrMigrateLegacyHistory(
+            user.id,
+            initialHistory
+          );
+
+          if (!isCancelled) {
+            if (migrationResult.error) {
+              setCloudError(`History migration notice: ${migrationResult.error.message}`);
+            }
+            setHistory(migrationResult.history);
+          }
+        }
+      } catch (err: unknown) {
+        if (!isCancelled) {
+          const msg = err instanceof Error ? err.message : 'Unknown error loading history';
+          setCloudError(msg);
+        }
+      }
     }
 
     initializeCloudWorkspace();
@@ -222,23 +244,22 @@ function AuthenticatedWorkspace({ user, onSignOut }: AuthenticatedWorkspaceProps
     .find((r) => r.id === activeSavedRequestId);
   const activeSavedRequestName = activeSavedRequest ? activeSavedRequest.name : null;
 
-  // New Request handler (clears activeSavedRequestId and resets editor to default)
+  // New Request handler (clears activeSavedRequestId, resets editor to clean default, and resets tab)
   const handleNewRequest = () => {
     setRequest(cloneRequest(DEFAULT_REQUEST));
     setResponse(null);
     setActiveSavedRequestId(null);
     setSelectedHistoryId(null);
+    setEditorResetSignal((prev) => prev + 1);
   };
 
-  // Record history (preserves template request with variables in localStorage)
-  const recordHistory = (
+  // Record history (persists template request with variables in Supabase)
+  const recordHistory = async (
     reqConfig: ApiRequest,
     resData: ResponseData,
     fallbackLatency: number
   ) => {
-    const historyItem: HistoryItem = {
-      id: generateUniqueId(),
-      timestamp: Date.now(),
+    const newItemData = {
       method: reqConfig.method,
       url: reqConfig.url,
       status: resData.status,
@@ -250,12 +271,14 @@ function AuthenticatedWorkspace({ user, onSignOut }: AuthenticatedWorkspaceProps
       response: resData,
     };
 
-    setHistory((prev) => {
-      const next = [historyItem, ...prev].slice(0, MAX_HISTORY_ITEMS);
-      saveHistoryToStorage(next);
-      return next;
-    });
-    setSelectedHistoryId(historyItem.id);
+    const { data, error } = await historyService.addHistoryItem(newItemData);
+    if (error || !data) {
+      setCloudError(`Failed to persist request history: ${error?.message || 'Unknown error'}`);
+      return;
+    }
+
+    setHistory((prev) => [data, ...prev.filter((item) => item.id !== data.id)].slice(0, MAX_HISTORY_ITEMS));
+    setSelectedHistoryId(data.id);
   };
 
   // Execute request with variable resolution
@@ -391,26 +414,33 @@ function AuthenticatedWorkspace({ user, onSignOut }: AuthenticatedWorkspaceProps
     );
   };
 
-  // History Actions (LocalStorage)
+  // History Actions (Supabase PostgreSQL)
   const handleSelectHistory = (item: HistoryItem) => {
     setRequest(cloneRequest(item.request));
     setResponse(item.response ? { ...item.response } : null);
     setSelectedHistoryId(item.id);
   };
 
-  const handleClearHistory = () => {
+  const handleClearHistory = async () => {
+    setCloudError(null);
+    const { error } = await historyService.clearHistory();
+    if (error) {
+      setCloudError(`Failed to clear request history: ${error.message}`);
+      return;
+    }
     setHistory([]);
-    clearHistoryFromStorage();
     setSelectedHistoryId(null);
   };
 
-  const handleDeleteHistoryItem = (id: string, e: React.MouseEvent) => {
+  const handleDeleteHistoryItem = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    setHistory((prev) => {
-      const next = prev.filter((item) => item.id !== id);
-      saveHistoryToStorage(next);
-      return next;
-    });
+    setCloudError(null);
+    const { error } = await historyService.deleteHistoryItem(id);
+    if (error) {
+      setCloudError(`Failed to delete history item: ${error.message}`);
+      return;
+    }
+    setHistory((prev) => prev.filter((item) => item.id !== id));
     if (selectedHistoryId === id) {
       setSelectedHistoryId(null);
     }
@@ -627,7 +657,7 @@ function AuthenticatedWorkspace({ user, onSignOut }: AuthenticatedWorkspaceProps
           <div className="flex items-center space-x-2">
             <span className="text-[10px] text-indigo-350 font-mono flex items-center space-x-1.5">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-              <span>Cloud Sync: Collections & Environments Active</span>
+              <span>Cloud Sync: Collections, Environments & History Active</span>
             </span>
           </div>
         </div>
@@ -654,6 +684,7 @@ function AuthenticatedWorkspace({ user, onSignOut }: AuthenticatedWorkspaceProps
         {/* Workspace Panels (Request Editor + Response Inspector) */}
         <div className="flex-1 flex flex-col space-y-4 overflow-hidden min-h-0">
           <RequestEditor
+            key={editorResetSignal}
             method={request.method}
             setMethod={setMethod}
             url={request.url}
