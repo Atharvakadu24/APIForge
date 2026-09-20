@@ -12,6 +12,7 @@ import SaveRequestModal from './components/SaveRequestModal';
 import CollectionModal from './components/CollectionModal';
 import ConfirmModal from './components/ConfirmModal';
 import EnvironmentModal from './components/EnvironmentModal';
+import CommandPaletteModal from './components/CommandPaletteModal';
 import type { ApiRequest, HttpMethod, KeyValueEntry, RequestAuth, RequestBodyType, ResponseData } from './types/request';
 import type { HistoryItem } from './types/history';
 import type { Collection, SavedRequest } from './types/collection';
@@ -74,6 +75,7 @@ function AuthenticatedWorkspace({ user, onSignOut }: AuthenticatedWorkspaceProps
   // Modals State
   const [isSaveModalOpen, setIsSaveModalOpen] = useState(false);
   const [isSaveAsModalOpen, setIsSaveAsModalOpen] = useState(false);
+  const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [collectionModalState, setCollectionModalState] = useState<{
     isOpen: boolean;
     title: string;
@@ -97,6 +99,20 @@ function AuthenticatedWorkspace({ user, onSignOut }: AuthenticatedWorkspaceProps
     message: '',
     onConfirm: () => {},
   });
+
+  // Global keyboard shortcuts (Ctrl+K / Cmd+K for Command Palette)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'k' || e.key === 'K')) {
+        e.preventDefault();
+        e.stopPropagation();
+        setIsCommandPaletteOpen((prev) => !prev);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   useEffect(() => {
     let isCancelled = false;
@@ -666,6 +682,7 @@ function AuthenticatedWorkspace({ user, onSignOut }: AuthenticatedWorkspaceProps
       activeEnvironmentId={activeEnvironmentId}
       onSelectEnvironment={handleSelectEnvironment}
       onOpenEnvironmentManager={() => setIsEnvironmentModalOpen(true)}
+      onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
       user={user}
       onSignOut={onSignOut}
     >
@@ -741,6 +758,19 @@ function AuthenticatedWorkspace({ user, onSignOut }: AuthenticatedWorkspaceProps
           />
         </div>
       </div>
+
+      {/* Quick Search / Command Palette Modal (Ctrl+K) */}
+      <CommandPaletteModal
+        isOpen={isCommandPaletteOpen}
+        onClose={() => setIsCommandPaletteOpen(false)}
+        collections={collections}
+        environments={environments}
+        history={history}
+        activeEnvironmentId={activeEnvironmentId}
+        onSelectSavedRequest={handleSelectSavedRequest}
+        onSelectHistory={handleSelectHistory}
+        onSelectEnvironment={handleSelectEnvironment}
+      />
 
       {/* Environment Manager Modal */}
       <EnvironmentModal

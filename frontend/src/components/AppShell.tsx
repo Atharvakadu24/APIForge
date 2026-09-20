@@ -26,6 +26,7 @@ interface AppShellProps {
   activeEnvironmentId: string | null;
   onSelectEnvironment: (id: string | null) => void;
   onOpenEnvironmentManager: () => void;
+  onOpenCommandPalette?: () => void;
   user?: User | null;
   onSignOut?: () => void;
 }
@@ -50,6 +51,7 @@ export default function AppShell({
   activeEnvironmentId,
   onSelectEnvironment,
   onOpenEnvironmentManager,
+  onOpenCommandPalette,
   user = null,
   onSignOut,
 }: AppShellProps) {
@@ -61,6 +63,7 @@ export default function AppShell({
         activeEnvironmentId={activeEnvironmentId}
         onSelectEnvironment={onSelectEnvironment}
         onOpenEnvironmentManager={onOpenEnvironmentManager}
+        onOpenCommandPalette={onOpenCommandPalette}
         user={user}
         onSignOut={onSignOut}
       />
