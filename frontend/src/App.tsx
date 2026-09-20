@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import type { User } from '@supabase/supabase-js';
+import { supabase } from './lib/supabase';
 import { AuthProvider } from './contexts/AuthContext';
 import { useAuth } from './hooks/useAuth';
 import AuthScreen from './components/AuthScreen';
@@ -313,13 +314,40 @@ function AuthenticatedWorkspace({ user, onSignOut }: AuthenticatedWorkspaceProps
       return;
     }
 
-    // 3. Dispatch resolved request to backend execution proxy
+    // 3. Resolve active Supabase authentication token
+    const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+    const token = sessionData?.session?.access_token;
+
+    if (sessionError || !token) {
+      setIsSending(false);
+      const errPayload = {
+        error: 'Authentication Required',
+        message: 'No active Supabase session found. Please sign in to execute API requests.',
+        suggestion: 'Ensure you are signed in. If your session expired, sign out and sign back in.',
+      };
+      const errBody = JSON.stringify(errPayload, null, 2);
+      setResponse({
+        status: 401,
+        statusText: 'Unauthorized',
+        headers: { 'content-type': 'application/json' },
+        time: 0,
+        size: new Blob([errBody]).size,
+        body: errBody,
+        isError: true,
+        errorMessage: 'Missing active Supabase authentication session.',
+      });
+      return;
+    }
+
+    // 4. Dispatch resolved request to backend execution proxy with Bearer token
     const startTime = performance.now();
     try {
-      const res = await fetch('http://localhost:3001/api/request/execute', {
+      const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
+      const res = await fetch(`${backendUrl}/api/request/execute`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
         },
         body: JSON.stringify(resolution.resolvedRequest),
       });
@@ -329,7 +357,7 @@ function AuthenticatedWorkspace({ user, onSignOut }: AuthenticatedWorkspaceProps
       recordHistory(request, data, Math.round(performance.now() - startTime));
     } catch (err: unknown) {
       const endTime = performance.now();
-      const errorMsg = err instanceof Error ? err.message : 'Failed to reach APIForge backend at http://localhost:3001';
+      const errorMsg = err instanceof Error ? err.message : 'Failed to reach APIForge backend';
       const errPayload = {
         error: 'Backend Proxy Unavailable',
         message: errorMsg,

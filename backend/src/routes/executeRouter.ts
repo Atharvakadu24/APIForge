@@ -1,14 +1,15 @@
 import { Router, Request, Response } from 'express';
 import { RequestExecutorService } from '../services/requestExecutor';
+import { requireAuth } from '../middleware/authMiddleware';
 import type { ExecuteRequestPayload } from '../types/execution';
 
 export const executeRouter = Router();
 
 /**
  * POST /api/request/execute (or /api/execute)
- * Dispatches an API request through the backend proxy.
+ * Dispatches an API request through the backend proxy with Supabase JWT authentication.
  */
-executeRouter.post('/execute', async (req: Request, res: Response) => {
+executeRouter.post('/execute', requireAuth, async (req: Request, res: Response) => {
   try {
     const payload: ExecuteRequestPayload = req.body;
 
