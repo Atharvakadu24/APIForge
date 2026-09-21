@@ -10,6 +10,14 @@ export const executeRouter = Router();
  * Dispatches an API request through the backend proxy with Supabase JWT authentication.
  */
 executeRouter.post('/execute', requireAuth, async (req: Request, res: Response) => {
+  const abortController = new AbortController();
+
+  req.on('close', () => {
+    if (!res.writableEnded) {
+      abortController.abort();
+    }
+  });
+
   try {
     const payload: ExecuteRequestPayload = req.body;
 
@@ -27,18 +35,22 @@ executeRouter.post('/execute', requireAuth, async (req: Request, res: Response) 
       return;
     }
 
-    const result = await RequestExecutorService.execute(payload);
-    res.status(200).json(result);
+    const result = await RequestExecutorService.execute(payload, abortController.signal);
+    if (!res.headersSent) {
+      res.status(200).json(result);
+    }
   } catch (err: any) {
-    res.status(500).json({
-      status: 500,
-      statusText: 'Internal Server Error',
-      headers: { 'content-type': 'application/json' },
-      time: 0,
-      size: 0,
-      body: JSON.stringify({ error: 'Internal execution error', message: err.message }),
-      isError: true,
-      errorMessage: err.message,
-    });
+    if (!res.headersSent) {
+      res.status(500).json({
+        status: 500,
+        statusText: 'Internal Server Error',
+        headers: { 'content-type': 'application/json' },
+        time: 0,
+        size: 0,
+        body: JSON.stringify({ error: 'Internal execution error', message: err.message }),
+        isError: true,
+        errorMessage: err.message,
+      });
+    }
   }
 });

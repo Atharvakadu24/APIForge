@@ -29,6 +29,8 @@ import {
   saveActiveEnvironmentId,
 } from './utils/environmentStorage';
 import { resolveApiRequest } from './utils/variableResolver';
+import { getApiUrl } from './config';
+import { buildUrlWithParams, syncUrlToParams, isRequestDirty } from './utils/urlParamsSync';
 
 
 const DEFAULT_REQUEST: ApiRequest = {
@@ -56,6 +58,17 @@ function AuthenticatedWorkspace({ user, onSignOut }: AuthenticatedWorkspaceProps
   const [isSending, setIsSending] = useState(false);
   const [response, setResponse] = useState<ResponseData | null>(null);
   const [editorResetSignal, setEditorResetSignal] = useState(0);
+  const activeAbortControllerRef = React.useRef<AbortController | null>(null);
+
+  // Clean up any in-flight request when component unmounts
+  useEffect(() => {
+    return () => {
+      if (activeAbortControllerRef.current) {
+        activeAbortControllerRef.current.abort();
+        activeAbortControllerRef.current = null;
+      }
+    };
+  }, []);
   
   // History State (Persisted in Supabase PostgreSQL)
   const [history, setHistory] = useState<HistoryItem[]>([]);
@@ -223,17 +236,31 @@ function AuthenticatedWorkspace({ user, onSignOut }: AuthenticatedWorkspaceProps
     };
   }, [user.id]);
 
-  // Request State Mutators
+  // Request State Mutators with URL ↔ Query Parameters Synchronization
   const setMethod = (method: HttpMethod) => {
     setRequest((prev) => ({ ...prev, method }));
   };
 
   const setUrl = (url: string) => {
-    setRequest((prev) => ({ ...prev, url }));
+    setRequest((prev) => {
+      const syncedParams = syncUrlToParams(url, prev.queryParams);
+      return {
+        ...prev,
+        url,
+        queryParams: syncedParams,
+      };
+    });
   };
 
   const setQueryParams = (queryParams: KeyValueEntry[]) => {
-    setRequest((prev) => ({ ...prev, queryParams }));
+    setRequest((prev) => {
+      const syncedUrl = buildUrlWithParams(prev.url, queryParams);
+      return {
+        ...prev,
+        url: syncedUrl,
+        queryParams,
+      };
+    });
   };
 
   const setHeaders = (headers: KeyValueEntry[]) => {
@@ -261,13 +288,29 @@ function AuthenticatedWorkspace({ user, onSignOut }: AuthenticatedWorkspaceProps
     .find((r) => r.id === activeSavedRequestId);
   const activeSavedRequestName = activeSavedRequest ? activeSavedRequest.name : null;
 
-  // New Request handler (clears activeSavedRequestId, resets editor to clean default, and resets tab)
+  // Compute dirty/unsaved changes state
+  const isDirty = isRequestDirty(request, activeSavedRequest?.request);
+
+  // New Request handler (clears activeSavedRequestId, cancels in-flight requests, resets editor to clean default, and resets tab)
   const handleNewRequest = () => {
+    if (activeAbortControllerRef.current) {
+      activeAbortControllerRef.current.abort();
+      activeAbortControllerRef.current = null;
+    }
     setRequest(cloneRequest(DEFAULT_REQUEST));
     setResponse(null);
     setActiveSavedRequestId(null);
     setSelectedHistoryId(null);
     setEditorResetSignal((prev) => prev + 1);
+  };
+
+  // Cancel in-flight request
+  const handleCancel = () => {
+    if (activeAbortControllerRef.current) {
+      activeAbortControllerRef.current.abort();
+      activeAbortControllerRef.current = null;
+    }
+    setIsSending(false);
   };
 
   // Record history (persists template request with variables in Supabase)
@@ -300,14 +343,22 @@ function AuthenticatedWorkspace({ user, onSignOut }: AuthenticatedWorkspaceProps
 
   // Execute request with variable resolution
   const handleSend = async () => {
+    // 1. Abort any lingering in-flight controller and initialize a new controller
+    if (activeAbortControllerRef.current) {
+      activeAbortControllerRef.current.abort();
+    }
+    const controller = new AbortController();
+    activeAbortControllerRef.current = controller;
+
     setIsSending(true);
     setResponse(null);
 
-    // 1. Resolve environment variables on a cloned request
+    // 2. Resolve environment variables on a cloned request
     const resolution = resolveApiRequest(request, activeEnvironment);
 
-    // 2. If unresolved variables are detected, halt and show structured error
+    // 3. If unresolved variables are detected, halt and show structured error
     if (!resolution.isValid) {
+      activeAbortControllerRef.current = null;
       setIsSending(false);
       const errPayload = {
         error: 'Unresolved Environment Variables',
@@ -330,11 +381,12 @@ function AuthenticatedWorkspace({ user, onSignOut }: AuthenticatedWorkspaceProps
       return;
     }
 
-    // 3. Resolve active Supabase authentication token
+    // 4. Resolve active Supabase authentication token
     const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
     const token = sessionData?.session?.access_token;
 
     if (sessionError || !token) {
+      activeAbortControllerRef.current = null;
       setIsSending(false);
       const errPayload = {
         error: 'Authentication Required',
@@ -355,23 +407,31 @@ function AuthenticatedWorkspace({ user, onSignOut }: AuthenticatedWorkspaceProps
       return;
     }
 
-    // 4. Dispatch resolved request to backend execution proxy with Bearer token
+    // 5. Dispatch resolved request to backend execution proxy with Bearer token & AbortSignal
     const startTime = performance.now();
     try {
-      const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
-      const res = await fetch(`${backendUrl}/api/request/execute`, {
+      const executeUrl = getApiUrl('/api/request/execute');
+      const res = await fetch(executeUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`,
         },
         body: JSON.stringify(resolution.resolvedRequest),
+        signal: controller.signal,
       });
 
       const data: ResponseData = await res.json();
       setResponse(data);
       recordHistory(request, data, Math.round(performance.now() - startTime));
     } catch (err: unknown) {
+      // Check if this error was caused by an intentional user cancellation
+      if (controller.signal.aborted || (err instanceof Error && err.name === 'AbortError')) {
+        // Clear response, do not record false history or error state
+        setResponse(null);
+        return;
+      }
+
       const endTime = performance.now();
       const errorMsg = err instanceof Error ? err.message : 'Failed to reach APIForge backend';
       const errPayload = {
@@ -394,6 +454,7 @@ function AuthenticatedWorkspace({ user, onSignOut }: AuthenticatedWorkspaceProps
       setResponse(errorResponse);
       recordHistory(request, errorResponse, errorResponse.time);
     } finally {
+      activeAbortControllerRef.current = null;
       setIsSending(false);
     }
   };
@@ -745,8 +806,10 @@ function AuthenticatedWorkspace({ user, onSignOut }: AuthenticatedWorkspaceProps
             auth={request.auth}
             setAuth={setAuth}
             onSend={handleSend}
+            onCancel={handleCancel}
             isSending={isSending}
             activeSavedRequestName={activeSavedRequestName}
+            isDirty={isDirty}
             onSave={() => setIsSaveModalOpen(true)}
             onSaveAs={() => setIsSaveAsModalOpen(true)}
             onUpdate={activeSavedRequestId ? handleUpdateSavedRequest : undefined}

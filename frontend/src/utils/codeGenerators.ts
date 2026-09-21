@@ -32,7 +32,11 @@ export interface NormalizedRequestData {
 export function normalizeRequest(request: ApiRequest): NormalizedRequestData {
   const method = (request.method || 'GET').toUpperCase();
   const rawUrl = request.url ? request.url.trim() : '';
-  const url = rawUrl || 'https://api.example.com';
+  const fallbackUrl = 'https://api.example.com';
+  
+  // Extract base URL without query string for languages like Python/Axios that pass params separately
+  const qIndex = rawUrl.indexOf('?');
+  const baseUrl = qIndex !== -1 ? rawUrl.substring(0, qIndex) : (rawUrl || fallbackUrl);
 
   // 1. Collect enabled query parameters
   const queryParams: Array<{ key: string; value: string }> = (request.queryParams || [])
@@ -98,16 +102,16 @@ export function normalizeRequest(request: ApiRequest): NormalizedRequestData {
     }
   }
 
-  // 5. Build full URL with query parameters
-  let fullUrl = url;
-  if (queryParams.length > 0) {
+  // 5. Build full URL with query parameters (avoid duplicating if rawUrl already has query string)
+  let fullUrl = rawUrl || fallbackUrl;
+  if (!fullUrl.includes('?') && queryParams.length > 0) {
     const qs = queryParams.map((p) => `${p.key}=${p.value}`).join('&');
-    fullUrl = url.includes('?') ? `${url}&${qs}` : `${url}?${qs}`;
+    fullUrl = `${baseUrl}?${qs}`;
   }
 
   return {
     method,
-    url,
+    url: baseUrl,
     fullUrl,
     queryParams,
     headers,

@@ -18,8 +18,10 @@ interface RequestEditorProps {
   auth: RequestAuth;
   setAuth: (auth: RequestAuth) => void;
   onSend: () => void;
+  onCancel?: () => void;
   isSending: boolean;
   activeSavedRequestName?: string | null;
+  isDirty?: boolean;
   onSave: () => void;
   onSaveAs: () => void;
   onUpdate?: () => void;
@@ -79,8 +81,10 @@ export default function RequestEditor({
   auth,
   setAuth,
   onSend,
+  onCancel,
   isSending,
   activeSavedRequestName,
+  isDirty = false,
   onSave,
   onSaveAs,
   onUpdate,
@@ -270,6 +274,12 @@ export default function RequestEditor({
             <span className="text-slate-200 font-semibold truncate text-xs" title={activeSavedRequestName}>
               {activeSavedRequestName}
             </span>
+            {isDirty && (
+              <span className="flex items-center space-x-1 text-[10px] text-amber-400 font-medium bg-amber-950/60 border border-amber-800/40 px-2 py-0.5 rounded-full shrink-0 animate-fade-in select-none">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                <span>Unsaved changes</span>
+              </span>
+            )}
           </div>
           <div className="flex items-center space-x-1.5 shrink-0">
             {onUpdate && (
@@ -304,7 +314,8 @@ export default function RequestEditor({
           <select
             value={method}
             onChange={(e) => setMethod(e.target.value as HttpMethod)}
-            className={`bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs font-bold font-mono focus:outline-none focus:border-indigo-500 cursor-pointer appearance-none pr-8 ${getMethodColor(method)}`}
+            disabled={isSending}
+            className={`bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs font-bold font-mono focus:outline-none focus:border-indigo-500 cursor-pointer appearance-none pr-8 disabled:opacity-60 disabled:cursor-not-allowed ${getMethodColor(method)}`}
           >
             {methods.map((m) => (
               <option key={m} value={m} className={getMethodColor(m)}>
@@ -325,8 +336,9 @@ export default function RequestEditor({
             type="text"
             value={url}
             onChange={(e) => setUrl(e.target.value)}
+            disabled={isSending}
             placeholder="Enter request URL (e.g. https://jsonplaceholder.typicode.com/todos/1)"
-            className="w-full bg-slate-950 border border-slate-800 text-slate-200 placeholder-slate-600 rounded-lg px-3.5 py-2 text-xs font-mono focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/35 transition"
+            className="w-full bg-slate-950 border border-slate-800 text-slate-200 placeholder-slate-600 rounded-lg px-3.5 py-2 text-xs font-mono focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/35 transition disabled:opacity-60 disabled:cursor-not-allowed"
           />
         </div>
 
@@ -335,7 +347,8 @@ export default function RequestEditor({
           <button
             type="button"
             onClick={onSave}
-            className="bg-slate-800 hover:bg-slate-750 text-slate-300 hover:text-white font-semibold text-xs py-2 px-3.5 rounded-lg border border-slate-700/80 transition duration-150 flex items-center space-x-1.5 cursor-pointer shadow-sm shrink-0"
+            disabled={isSending}
+            className="bg-slate-800 hover:bg-slate-750 disabled:opacity-50 text-slate-300 hover:text-white font-semibold text-xs py-2 px-3.5 rounded-lg border border-slate-700/80 transition duration-150 flex items-center space-x-1.5 cursor-pointer disabled:cursor-not-allowed shadow-sm shrink-0"
             title="Save request to collection"
           >
             <svg className="w-3.5 h-3.5 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -358,29 +371,31 @@ export default function RequestEditor({
           <span>Code</span>
         </button>
 
-        {/* Send Button */}
-        <button
-          onClick={onSend}
-          disabled={isSending}
-          className="bg-indigo-600 hover:bg-indigo-500 disabled:bg-indigo-850 text-white font-semibold text-xs py-2 px-5 rounded-lg shadow-lg shadow-indigo-650/15 hover:shadow-indigo-500/25 transition duration-200 flex items-center space-x-1.5 cursor-pointer disabled:cursor-not-allowed shrink-0"
-        >
-          {isSending ? (
-            <>
-              <svg className="animate-spin h-3.5 w-3.5 text-white" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-              </svg>
-              <span>Sending...</span>
-            </>
-          ) : (
-            <>
-              <span>Send</span>
-              <svg className="w-3 h-3 text-indigo-200" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M14 5l7 7m0 0l-7 7m7-7H3" />
-              </svg>
-            </>
-          )}
-        </button>
+        {/* Send / Cancel Button */}
+        {isSending ? (
+          <button
+            type="button"
+            onClick={onCancel}
+            className="bg-rose-600 hover:bg-rose-500 active:bg-rose-700 text-white font-semibold text-xs py-2 px-4.5 rounded-lg shadow-lg shadow-rose-600/20 hover:shadow-rose-500/30 transition duration-150 flex items-center space-x-1.5 cursor-pointer shrink-0"
+            title="Cancel in-flight request"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+            <span>Cancel</span>
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={onSend}
+            className="bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs py-2 px-5 rounded-lg shadow-lg shadow-indigo-650/15 hover:shadow-indigo-500/25 transition duration-200 flex items-center space-x-1.5 cursor-pointer shrink-0"
+          >
+            <span>Send</span>
+            <svg className="w-3 h-3 text-indigo-200" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M14 5l7 7m0 0l-7 7m7-7H3" />
+            </svg>
+          </button>
+        )}
       </div>
 
       {/* Tabs list */}

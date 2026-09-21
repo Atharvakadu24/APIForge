@@ -30,14 +30,15 @@ interface InternalHttpResponse {
 
 export class RequestExecutorService {
   /**
-   * Dispatches a single HTTP/HTTPS request over a secure agent.
+   * Dispatches a single HTTP/HTTPS request over a secure agent with optional AbortSignal.
    */
   private static executeSingleRequest(
     targetUrl: URL,
     method: string,
     headers: Record<string, string>,
     body: string | undefined,
-    timeoutMs: number
+    timeoutMs: number,
+    signal?: AbortSignal
   ): Promise<InternalHttpResponse> {
     return new Promise((resolve, reject) => {
       let isSettled = false;
@@ -58,9 +59,17 @@ export class RequestExecutorService {
         agent: agent,
       };
 
+      const cleanup = () => {
+        clearTimeout(timer);
+        if (signal && onAbort) {
+          signal.removeEventListener('abort', onAbort);
+        }
+      };
+
       const timer = setTimeout(() => {
         if (!isSettled) {
           isSettled = true;
+          cleanup();
           const timeoutErr = new SSRFSecurityError(`Request timed out after ${timeoutMs}ms.`, 'TIMEOUT');
           if (activeRes) {
             activeRes.destroy(timeoutErr);
@@ -71,6 +80,30 @@ export class RequestExecutorService {
           reject(timeoutErr);
         }
       }, timeoutMs);
+
+      const onAbort = () => {
+        if (!isSettled) {
+          isSettled = true;
+          cleanup();
+          const abortErr = new Error('Request aborted by client');
+          abortErr.name = 'AbortError';
+          if (activeRes) {
+            activeRes.destroy(abortErr);
+          }
+          if (req) {
+            req.destroy(abortErr);
+          }
+          reject(abortErr);
+        }
+      };
+
+      if (signal) {
+        if (signal.aborted) {
+          onAbort();
+          return;
+        }
+        signal.addEventListener('abort', onAbort);
+      }
 
       req = requestFn(options, (res) => {
         activeRes = res;
@@ -89,7 +122,7 @@ export class RequestExecutorService {
         res.on('end', () => {
           if (isSettled) return;
           isSettled = true;
-          clearTimeout(timer);
+          cleanup();
           const responseBody = Buffer.concat(chunks).toString('utf8');
           resolve({
             status: res.statusCode || 200,
@@ -103,7 +136,7 @@ export class RequestExecutorService {
         res.on('error', (err) => {
           if (isSettled) return;
           isSettled = true;
-          clearTimeout(timer);
+          cleanup();
           reject(err);
         });
       });
@@ -111,7 +144,7 @@ export class RequestExecutorService {
       req.on('error', (err) => {
         if (isSettled) return;
         isSettled = true;
-        clearTimeout(timer);
+        cleanup();
         reject(err);
       });
 
@@ -124,20 +157,29 @@ export class RequestExecutorService {
   }
 
   /**
-   * Executes an incoming request against the target API with SSRF defense and manual redirect verification.
+   * Executes an incoming request against the target API with SSRF defense, manual redirect verification, and AbortSignal support.
    */
-  public static async execute(payload: ExecuteRequestPayload): Promise<ExecuteResponsePayload> {
+  public static async execute(payload: ExecuteRequestPayload, signal?: AbortSignal): Promise<ExecuteResponsePayload> {
     const startTime = performance.now();
 
     try {
+      if (signal?.aborted) {
+        const abortErr = new Error('Request aborted by client');
+        abortErr.name = 'AbortError';
+        throw abortErr;
+      }
+
       // 1. Initial URL Validation & Parsing
       let currentUrl = SSRFValidator.validateUrlProtocolAndFormat(payload.url);
 
-      // 2. Merge Initial Query Parameters
+      // 2. Merge Initial Query Parameters (avoid duplicate appending if already in URL)
       if (Array.isArray(payload.queryParams)) {
-        for (const param of payload.queryParams) {
-          if (param.enabled && param.key && param.key.trim()) {
-            currentUrl.searchParams.append(param.key.trim(), param.value || '');
+        const hasExistingQuery = currentUrl.search && currentUrl.search.length > 1;
+        if (!hasExistingQuery) {
+          for (const param of payload.queryParams) {
+            if (param.enabled && param.key && param.key.trim()) {
+              currentUrl.searchParams.append(param.key.trim(), param.value || '');
+            }
           }
         }
       }
@@ -148,10 +190,13 @@ export class RequestExecutorService {
         payload.auth.apiKey?.addTo === 'query' &&
         payload.auth.apiKey.key?.trim()
       ) {
-        currentUrl.searchParams.append(
-          payload.auth.apiKey.key.trim(),
-          payload.auth.apiKey.value || ''
-        );
+        const authKey = payload.auth.apiKey.key.trim();
+        if (!currentUrl.searchParams.has(authKey)) {
+          currentUrl.searchParams.append(
+            authKey,
+            payload.auth.apiKey.value || ''
+          );
+        }
       }
 
       // 3. Pre-flight DNS & Hostname Validation
@@ -221,7 +266,8 @@ export class RequestExecutorService {
           currentMethod,
           requestHeaders,
           currentBody,
-          timeoutMs
+          timeoutMs,
+          signal
         );
 
         const isRedirectStatus = [301, 302, 303, 307, 308].includes(response.status);
@@ -340,8 +386,29 @@ export class RequestExecutorService {
         };
       }
 
+      // Client cancellation / abort
+      if (signal?.aborted || err.name === 'AbortError') {
+        const errorPayload = {
+          error: 'Client Cancelled',
+          code: 'ABORTED',
+          message: 'The request was cancelled by the client.',
+        };
+        const errorBody = JSON.stringify(errorPayload, null, 2);
+
+        return {
+          status: 499,
+          statusText: 'Client Closed Request',
+          headers: { 'content-type': 'application/json' },
+          time: latency,
+          size: Buffer.byteLength(errorBody, 'utf8'),
+          body: errorBody,
+          isError: true,
+          errorMessage: errorPayload.message,
+        };
+      }
+
       // Timeout detection
-      if (err.code === 'TIMEOUT' || err.name === 'AbortError' || err.name === 'TimeoutError') {
+      if (err.code === 'TIMEOUT' || err.name === 'TimeoutError') {
         const errorPayload = {
           error: 'Gateway Timeout',
           code: 'TIMEOUT',
