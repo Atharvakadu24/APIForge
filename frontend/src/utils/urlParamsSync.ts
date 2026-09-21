@@ -283,7 +283,25 @@ export function isRequestDirty(
     return true;
   }
 
-  // 7. Authentication
+  // 7. Form URL Encoded fields
+  if (current.bodyType === 'x-www-form-urlencoded' || saved.bodyType === 'x-www-form-urlencoded') {
+    const currentFormUrlEncoded = normalizeEntries(current.formUrlEncoded);
+    const savedFormUrlEncoded = normalizeEntries(saved.formUrlEncoded);
+    if (JSON.stringify(currentFormUrlEncoded) !== JSON.stringify(savedFormUrlEncoded)) {
+      return true;
+    }
+  }
+
+  // 8. Multipart Form Data fields
+  if (current.bodyType === 'multipart/form-data' || saved.bodyType === 'multipart/form-data') {
+    const currentMultipart = normalizeEntries(current.multipartFormData);
+    const savedMultipart = normalizeEntries(saved.multipartFormData);
+    if (JSON.stringify(currentMultipart) !== JSON.stringify(savedMultipart)) {
+      return true;
+    }
+  }
+
+  // 9. Authentication
   if (normalizeAuth(current.auth) !== normalizeAuth(saved.auth)) {
     return true;
   }

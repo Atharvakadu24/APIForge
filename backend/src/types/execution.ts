@@ -26,7 +26,12 @@ export interface RequestAuth {
   apiKey?: ApiKeyAuth;
 }
 
-export type RequestBodyType = 'none' | 'json' | 'text';
+export type RequestBodyType =
+  | 'none'
+  | 'json'
+  | 'text'
+  | 'x-www-form-urlencoded'
+  | 'multipart/form-data';
 
 export interface ExecuteRequestPayload {
   method: HttpMethod;
@@ -35,6 +40,8 @@ export interface ExecuteRequestPayload {
   headers?: KeyValueEntry[];
   bodyType?: RequestBodyType;
   body?: string;
+  formUrlEncoded?: KeyValueEntry[];
+  multipartFormData?: KeyValueEntry[];
   auth?: RequestAuth;
   timeoutMs?: number;
 }

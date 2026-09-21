@@ -1,4 +1,4 @@
-import type { ApiRequest, KeyValueEntry } from '../types/request';
+import type { ApiRequest, KeyValueEntry, RequestBodyType } from '../types/request';
 
 export type SupportedSnippetLanguage = 'curl' | 'fetch' | 'python' | 'axios';
 
@@ -26,14 +26,16 @@ export interface NormalizedRequestData {
   queryParams: Array<{ key: string; value: string }>;
   headers: Array<{ key: string; value: string }>;
   body: string | null;
-  bodyType: 'none' | 'json' | 'text';
+  bodyType: RequestBodyType;
+  formUrlEncoded: Array<{ key: string; value: string }>;
+  multipartFormData: Array<{ key: string; value: string }>;
 }
 
 export function normalizeRequest(request: ApiRequest): NormalizedRequestData {
   const method = (request.method || 'GET').toUpperCase();
   const rawUrl = request.url ? request.url.trim() : '';
   const fallbackUrl = 'https://api.example.com';
-  
+
   // Extract base URL without query string for languages like Python/Axios that pass params separately
   const qIndex = rawUrl.indexOf('?');
   const baseUrl = qIndex !== -1 ? rawUrl.substring(0, qIndex) : (rawUrl || fallbackUrl);
@@ -44,7 +46,7 @@ export function normalizeRequest(request: ApiRequest): NormalizedRequestData {
     .map((p: KeyValueEntry) => ({ key: p.key.trim(), value: p.value }));
 
   // 2. Collect enabled headers
-  const headers: Array<{ key: string; value: string }> = (request.headers || [])
+  let headers: Array<{ key: string; value: string }> = (request.headers || [])
     .filter((h: KeyValueEntry) => h.enabled && h.key.trim() !== '')
     .map((h: KeyValueEntry) => ({ key: h.key.trim(), value: h.value }));
 
@@ -82,27 +84,45 @@ export function normalizeRequest(request: ApiRequest): NormalizedRequestData {
     }
   }
 
-  // 4. Handle Body & Content-Type header
+  // 4. Collect Form URL Encoded and Multipart entries
+  const formUrlEncoded: Array<{ key: string; value: string }> = (request.formUrlEncoded || [])
+    .filter((f: KeyValueEntry) => f.enabled && f.key.trim() !== '')
+    .map((f: KeyValueEntry) => ({ key: f.key.trim(), value: f.value }));
+
+  const multipartFormData: Array<{ key: string; value: string }> = (request.multipartFormData || [])
+    .filter((f: KeyValueEntry) => f.enabled && f.key.trim() !== '')
+    .map((f: KeyValueEntry) => ({ key: f.key.trim(), value: f.value }));
+
+  // 5. Handle Body & Content-Type header
   let body: string | null = null;
   const bodyType = request.bodyType || 'none';
 
-  if (bodyType !== 'none' && request.body && request.body.trim().length > 0) {
-    body = request.body.trim();
-
-    if (bodyType === 'json') {
-      const hasContentType = headers.some((h) => h.key.toLowerCase() === 'content-type');
-      if (!hasContentType) {
-        headers.push({ key: 'Content-Type', value: 'application/json' });
-      }
-    } else if (bodyType === 'text') {
-      const hasContentType = headers.some((h) => h.key.toLowerCase() === 'content-type');
-      if (!hasContentType) {
-        headers.push({ key: 'Content-Type', value: 'text/plain' });
-      }
+  if (bodyType === 'json') {
+    if (request.body && request.body.trim().length > 0) {
+      body = request.body.trim();
     }
+    const hasContentType = headers.some((h) => h.key.toLowerCase() === 'content-type');
+    if (!hasContentType) {
+      headers.push({ key: 'Content-Type', value: 'application/json' });
+    }
+  } else if (bodyType === 'text') {
+    if (request.body && request.body.trim().length > 0) {
+      body = request.body.trim();
+    }
+    const hasContentType = headers.some((h) => h.key.toLowerCase() === 'content-type');
+    if (!hasContentType) {
+      headers.push({ key: 'Content-Type', value: 'text/plain' });
+    }
+  } else if (bodyType === 'x-www-form-urlencoded') {
+    // Strip conflicting Content-Type (such as default application/json) and ensure application/x-www-form-urlencoded
+    headers = headers.filter((h) => h.key.toLowerCase() !== 'content-type');
+    headers.push({ key: 'Content-Type', value: 'application/x-www-form-urlencoded' });
+  } else if (bodyType === 'multipart/form-data') {
+    // For multipart/form-data, strip manual Content-Type header so the runtime boundary is generated cleanly
+    headers = headers.filter((h) => h.key.toLowerCase() !== 'content-type');
   }
 
-  // 5. Build full URL with query parameters (avoid duplicating if rawUrl already has query string)
+  // 6. Build full URL with query parameters
   let fullUrl = rawUrl || fallbackUrl;
   if (!fullUrl.includes('?') && queryParams.length > 0) {
     const qs = queryParams.map((p) => `${p.key}=${p.value}`).join('&');
@@ -117,6 +137,8 @@ export function normalizeRequest(request: ApiRequest): NormalizedRequestData {
     headers,
     body,
     bodyType,
+    formUrlEncoded,
+    multipartFormData,
   };
 }
 
@@ -131,7 +153,8 @@ function escapeShellSingleQuotes(str: string): string {
  * Generates a multiline, readable cURL command.
  */
 export function generateCurl(request: ApiRequest): string {
-  const { method, fullUrl, headers, body } = normalizeRequest(request);
+  const { method, fullUrl, headers, body, bodyType, formUrlEncoded, multipartFormData } =
+    normalizeRequest(request);
 
   const parts: string[] = [`curl --request ${method}`, `  --url '${escapeShellSingleQuotes(fullUrl)}'`];
 
@@ -139,7 +162,23 @@ export function generateCurl(request: ApiRequest): string {
     parts.push(`  --header '${escapeShellSingleQuotes(`${h.key}: ${h.value}`)}'`);
   }
 
-  if (body) {
+  if (bodyType === 'x-www-form-urlencoded') {
+    if (formUrlEncoded.length > 0) {
+      for (const field of formUrlEncoded) {
+        parts.push(
+          `  --data-urlencode '${escapeShellSingleQuotes(`${field.key}=${field.value}`)}'`
+        );
+      }
+    }
+  } else if (bodyType === 'multipart/form-data') {
+    if (multipartFormData.length > 0) {
+      for (const field of multipartFormData) {
+        parts.push(
+          `  --form '${escapeShellSingleQuotes(`${field.key}=${field.value}`)}'`
+        );
+      }
+    }
+  } else if (body) {
     parts.push(`  --data '${escapeShellSingleQuotes(body)}'`);
   }
 
@@ -150,10 +189,17 @@ export function generateCurl(request: ApiRequest): string {
  * Generates modern JavaScript fetch code with async/await.
  */
 export function generateFetch(request: ApiRequest): string {
-  const { method, fullUrl, headers, body, bodyType } = normalizeRequest(request);
+  const { method, fullUrl, headers, body, bodyType, formUrlEncoded, multipartFormData } =
+    normalizeRequest(request);
 
   const hasHeaders = headers.length > 0;
-  const hasBody = Boolean(body);
+  const hasBody =
+    bodyType === 'x-www-form-urlencoded'
+      ? formUrlEncoded.length > 0
+      : bodyType === 'multipart/form-data'
+      ? multipartFormData.length > 0
+      : Boolean(body);
+
   const isSimpleGet = method === 'GET' && !hasHeaders && !hasBody;
 
   if (isSimpleGet) {
@@ -166,6 +212,7 @@ export function generateFetch(request: ApiRequest): string {
 }`;
   }
 
+  const prepLines: string[] = [];
   const optionsEntries: string[] = [`  method: '${method}',`];
 
   if (hasHeaders) {
@@ -173,7 +220,29 @@ export function generateFetch(request: ApiRequest): string {
     optionsEntries.push(`  headers: {\n${headerLines.join('\n')}\n  },`);
   }
 
-  if (hasBody && body) {
+  if (bodyType === 'x-www-form-urlencoded') {
+    if (formUrlEncoded.length > 0) {
+      prepLines.push('const urlencoded = new URLSearchParams();');
+      for (const field of formUrlEncoded) {
+        prepLines.push(
+          `urlencoded.append(${JSON.stringify(field.key)}, ${JSON.stringify(field.value)});`
+        );
+      }
+      prepLines.push('');
+      optionsEntries.push('  body: urlencoded,');
+    }
+  } else if (bodyType === 'multipart/form-data') {
+    if (multipartFormData.length > 0) {
+      prepLines.push('const formData = new FormData();');
+      for (const field of multipartFormData) {
+        prepLines.push(
+          `formData.append(${JSON.stringify(field.key)}, ${JSON.stringify(field.value)});`
+        );
+      }
+      prepLines.push('');
+      optionsEntries.push('  body: formData,');
+    }
+  } else if (hasBody && body) {
     if (bodyType === 'json') {
       try {
         const parsed = JSON.parse(body);
@@ -190,7 +259,9 @@ export function generateFetch(request: ApiRequest): string {
     }
   }
 
-  return `const url = '${fullUrl}';
+  const prepSection = prepLines.length > 0 ? `${prepLines.join('\n')}\n` : '';
+
+  return `${prepSection}const url = '${fullUrl}';
 const options = {
 ${optionsEntries.join('\n')}
 };
@@ -208,7 +279,8 @@ try {
  * Generates Python requests snippet.
  */
 export function generatePythonRequests(request: ApiRequest): string {
-  const { method, url, queryParams, headers, body, bodyType } = normalizeRequest(request);
+  const { method, url, queryParams, headers, body, bodyType, formUrlEncoded, multipartFormData } =
+    normalizeRequest(request);
 
   const lines: string[] = ['import requests', '', `url = "${url}"`, ''];
   const requestArgs: string[] = [`"${method}"`, 'url'];
@@ -231,7 +303,25 @@ export function generatePythonRequests(request: ApiRequest): string {
     requestArgs.push('headers=headers');
   }
 
-  if (body) {
+  if (bodyType === 'x-www-form-urlencoded') {
+    if (formUrlEncoded.length > 0) {
+      const fieldLines = formUrlEncoded.map(
+        (f) => `    "${f.key.replace(/"/g, '\\"')}": "${f.value.replace(/"/g, '\\"')}",`
+      );
+      lines.push(`payload = {\n${fieldLines.join('\n')}\n}`);
+      lines.push('');
+      requestArgs.push('data=payload');
+    }
+  } else if (bodyType === 'multipart/form-data') {
+    if (multipartFormData.length > 0) {
+      const fileLines = multipartFormData.map(
+        (f) => `    "${f.key.replace(/"/g, '\\"')}": (None, "${f.value.replace(/"/g, '\\"')}"),`
+      );
+      lines.push(`files = {\n${fileLines.join('\n')}\n}`);
+      lines.push('');
+      requestArgs.push('files=files');
+    }
+  } else if (body) {
     if (bodyType === 'json') {
       try {
         const parsed = JSON.parse(body);
@@ -265,8 +355,10 @@ export function generatePythonRequests(request: ApiRequest): string {
  * Generates Axios snippet.
  */
 export function generateAxios(request: ApiRequest): string {
-  const { method, url, queryParams, headers, body, bodyType } = normalizeRequest(request);
+  const { method, url, queryParams, headers, body, bodyType, formUrlEncoded, multipartFormData } =
+    normalizeRequest(request);
 
+  const prepLines: string[] = [];
   const configLines: string[] = [`  method: '${method}',`, `  url: '${url}',`];
 
   if (queryParams.length > 0) {
@@ -283,7 +375,29 @@ export function generateAxios(request: ApiRequest): string {
     configLines.push(`  headers: {\n${headerLines.join('\n')}\n  },`);
   }
 
-  if (body) {
+  if (bodyType === 'x-www-form-urlencoded') {
+    if (formUrlEncoded.length > 0) {
+      prepLines.push('const params = new URLSearchParams();');
+      for (const field of formUrlEncoded) {
+        prepLines.push(
+          `params.append(${JSON.stringify(field.key)}, ${JSON.stringify(field.value)});`
+        );
+      }
+      prepLines.push('');
+      configLines.push('  data: params,');
+    }
+  } else if (bodyType === 'multipart/form-data') {
+    if (multipartFormData.length > 0) {
+      prepLines.push('const formData = new FormData();');
+      for (const field of multipartFormData) {
+        prepLines.push(
+          `formData.append(${JSON.stringify(field.key)}, ${JSON.stringify(field.value)});`
+        );
+      }
+      prepLines.push('');
+      configLines.push('  data: formData,');
+    }
+  } else if (body) {
     if (bodyType === 'json') {
       try {
         const parsed = JSON.parse(body);
@@ -300,9 +414,11 @@ export function generateAxios(request: ApiRequest): string {
     }
   }
 
+  const prepSection = prepLines.length > 0 ? `${prepLines.join('\n')}\n` : '';
+
   return `import axios from 'axios';
 
-const options = {
+${prepSection}const options = {
 ${configLines.join('\n')}
 };
 

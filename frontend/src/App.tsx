@@ -13,6 +13,7 @@ import CollectionModal from './components/CollectionModal';
 import ConfirmModal from './components/ConfirmModal';
 import EnvironmentModal from './components/EnvironmentModal';
 import CommandPaletteModal from './components/CommandPaletteModal';
+import ImportRequestModal from './components/ImportRequestModal';
 import type { ApiRequest, HttpMethod, KeyValueEntry, RequestAuth, RequestBodyType, ResponseData } from './types/request';
 import type { HistoryItem } from './types/history';
 import type { Collection, SavedRequest } from './types/collection';
@@ -31,6 +32,7 @@ import {
 import { resolveApiRequest } from './utils/variableResolver';
 import { getApiUrl } from './config';
 import { buildUrlWithParams, syncUrlToParams, isRequestDirty } from './utils/urlParamsSync';
+import { downloadRequestJsonFile } from './utils/importExportUtils';
 
 
 const DEFAULT_REQUEST: ApiRequest = {
@@ -43,6 +45,8 @@ const DEFAULT_REQUEST: ApiRequest = {
   ],
   bodyType: 'none',
   body: '',
+  formUrlEncoded: [],
+  multipartFormData: [],
   auth: {
     type: 'none',
   },
@@ -84,6 +88,7 @@ function AuthenticatedWorkspace({ user, onSignOut }: AuthenticatedWorkspaceProps
   const [environments, setEnvironments] = useState<Environment[]>([]);
   const [activeEnvironmentId, setActiveEnvironmentId] = useState<string | null>(null);
   const [isEnvironmentModalOpen, setIsEnvironmentModalOpen] = useState(false);
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
 
   // Modals State
   const [isSaveModalOpen, setIsSaveModalOpen] = useState(false);
@@ -275,8 +280,32 @@ function AuthenticatedWorkspace({ user, onSignOut }: AuthenticatedWorkspaceProps
     setRequest((prev) => ({ ...prev, bodyType }));
   };
 
+  const setFormUrlEncoded = (formUrlEncoded: KeyValueEntry[]) => {
+    setRequest((prev) => ({ ...prev, formUrlEncoded }));
+  };
+
+  const setMultipartFormData = (multipartFormData: KeyValueEntry[]) => {
+    setRequest((prev) => ({ ...prev, multipartFormData }));
+  };
+
   const setAuth = (auth: RequestAuth) => {
     setRequest((prev) => ({ ...prev, auth }));
+  };
+
+  const handleExportRequest = () => {
+    downloadRequestJsonFile(request);
+  };
+
+  const handleImportRequest = (importedReq: ApiRequest) => {
+    if (activeAbortControllerRef.current) {
+      activeAbortControllerRef.current.abort();
+      activeAbortControllerRef.current = null;
+    }
+    setRequest(cloneRequest(importedReq));
+    setActiveSavedRequestId(null);
+    setSelectedHistoryId(null);
+    setResponse(null);
+    setEditorResetSignal((prev) => prev + 1);
   };
 
   // Active Environment lookup
@@ -748,7 +777,7 @@ function AuthenticatedWorkspace({ user, onSignOut }: AuthenticatedWorkspaceProps
       onSignOut={onSignOut}
     >
       {/* Centered Workspace layout */}
-      <div className="max-w-5xl w-full mx-auto flex flex-col space-y-4 h-full">
+      <div className="max-w-5xl w-full mx-auto flex flex-col space-y-4 min-h-full pb-10">
         {/* Workspace status bar */}
         <div className="bg-slate-900/40 border border-slate-850 px-4 py-2 rounded-lg flex items-center justify-between text-xs text-slate-400 select-none">
           <div className="flex items-center space-x-2">
@@ -788,7 +817,7 @@ function AuthenticatedWorkspace({ user, onSignOut }: AuthenticatedWorkspaceProps
         )}
 
         {/* Workspace Panels (Request Editor + Response Inspector) */}
-        <div className="flex-1 flex flex-col space-y-4 overflow-hidden min-h-0">
+        <div className="flex flex-col space-y-4">
           <RequestEditor
             key={editorResetSignal}
             method={request.method}
@@ -803,6 +832,10 @@ function AuthenticatedWorkspace({ user, onSignOut }: AuthenticatedWorkspaceProps
             setBodyType={setBodyType}
             body={request.body}
             setBody={setBody}
+            formUrlEncoded={request.formUrlEncoded || []}
+            setFormUrlEncoded={setFormUrlEncoded}
+            multipartFormData={request.multipartFormData || []}
+            setMultipartFormData={setMultipartFormData}
             auth={request.auth}
             setAuth={setAuth}
             onSend={handleSend}
@@ -813,6 +846,8 @@ function AuthenticatedWorkspace({ user, onSignOut }: AuthenticatedWorkspaceProps
             onSave={() => setIsSaveModalOpen(true)}
             onSaveAs={() => setIsSaveAsModalOpen(true)}
             onUpdate={activeSavedRequestId ? handleUpdateSavedRequest : undefined}
+            onExport={handleExportRequest}
+            onImport={() => setIsImportModalOpen(true)}
           />
           
           <ResponsePanel
@@ -833,6 +868,13 @@ function AuthenticatedWorkspace({ user, onSignOut }: AuthenticatedWorkspaceProps
         onSelectSavedRequest={handleSelectSavedRequest}
         onSelectHistory={handleSelectHistory}
         onSelectEnvironment={handleSelectEnvironment}
+      />
+
+      {/* Import Request Modal */}
+      <ImportRequestModal
+        isOpen={isImportModalOpen}
+        onClose={() => setIsImportModalOpen(false)}
+        onImport={handleImportRequest}
       />
 
       {/* Environment Manager Modal */}

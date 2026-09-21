@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import React, { useState } from 'react';
 import CodeSnippetModal from './CodeSnippetModal';
 import type { HttpMethod, KeyValueEntry, RequestAuth, RequestBodyType, AuthType } from '../types/request';
 
@@ -15,6 +15,10 @@ interface RequestEditorProps {
   setBodyType: (bodyType: RequestBodyType) => void;
   body: string;
   setBody: (body: string) => void;
+  formUrlEncoded?: KeyValueEntry[];
+  setFormUrlEncoded?: (entries: KeyValueEntry[]) => void;
+  multipartFormData?: KeyValueEntry[];
+  setMultipartFormData?: (entries: KeyValueEntry[]) => void;
   auth: RequestAuth;
   setAuth: (auth: RequestAuth) => void;
   onSend: () => void;
@@ -25,6 +29,8 @@ interface RequestEditorProps {
   onSave: () => void;
   onSaveAs: () => void;
   onUpdate?: () => void;
+  onExport?: () => void;
+  onImport?: () => void;
 }
 
 const generateId = () => {
@@ -78,6 +84,10 @@ export default function RequestEditor({
   setBodyType,
   body,
   setBody,
+  formUrlEncoded = [],
+  setFormUrlEncoded,
+  multipartFormData = [],
+  setMultipartFormData,
   auth,
   setAuth,
   onSend,
@@ -88,6 +98,8 @@ export default function RequestEditor({
   onSave,
   onSaveAs,
   onUpdate,
+  onExport,
+  onImport,
 }: RequestEditorProps) {
   const [activeTab, setActiveTab] = useState<'params' | 'headers' | 'body' | 'auth'>('params');
   const [showBearerToken, setShowBearerToken] = useState(false);
@@ -158,6 +170,78 @@ export default function RequestEditor({
 
   const handleDeleteHeader = (id: string) => {
     setHeaders(headers.filter((header) => header.id !== id));
+  };
+
+  // Form URL Encoded handlers
+  const handleAddFormUrlEncoded = () => {
+    if (!setFormUrlEncoded) return;
+    const newField: KeyValueEntry = {
+      id: generateId(),
+      key: '',
+      value: '',
+      enabled: true,
+      description: '',
+    };
+    setFormUrlEncoded([...formUrlEncoded, newField]);
+  };
+
+  const handleToggleFormUrlEncoded = (id: string, enabled: boolean) => {
+    if (!setFormUrlEncoded) return;
+    setFormUrlEncoded(
+      formUrlEncoded.map((field) =>
+        field.id === id ? { ...field, enabled } : field
+      )
+    );
+  };
+
+  const handleUpdateFormUrlEncoded = (id: string, fieldName: 'key' | 'value' | 'description', value: string) => {
+    if (!setFormUrlEncoded) return;
+    setFormUrlEncoded(
+      formUrlEncoded.map((field) =>
+        field.id === id ? { ...field, [fieldName]: value } : field
+      )
+    );
+  };
+
+  const handleDeleteFormUrlEncoded = (id: string) => {
+    if (!setFormUrlEncoded) return;
+    setFormUrlEncoded(formUrlEncoded.filter((field) => field.id !== id));
+  };
+
+  // Multipart Form Data handlers
+  const handleAddMultipart = () => {
+    if (!setMultipartFormData) return;
+    const newField: KeyValueEntry = {
+      id: generateId(),
+      key: '',
+      value: '',
+      enabled: true,
+      description: '',
+    };
+    setMultipartFormData([...multipartFormData, newField]);
+  };
+
+  const handleToggleMultipart = (id: string, enabled: boolean) => {
+    if (!setMultipartFormData) return;
+    setMultipartFormData(
+      multipartFormData.map((field) =>
+        field.id === id ? { ...field, enabled } : field
+      )
+    );
+  };
+
+  const handleUpdateMultipart = (id: string, fieldName: 'key' | 'value' | 'description', value: string) => {
+    if (!setMultipartFormData) return;
+    setMultipartFormData(
+      multipartFormData.map((field) =>
+        field.id === id ? { ...field, [fieldName]: value } : field
+      )
+    );
+  };
+
+  const handleDeleteMultipart = (id: string) => {
+    if (!setMultipartFormData) return;
+    setMultipartFormData(multipartFormData.filter((field) => field.id !== id));
   };
 
   // Body JSON Validation & Formatting
@@ -259,7 +343,18 @@ export default function RequestEditor({
 
   const activeParamsCount = queryParams.filter((p) => p.enabled && p.key.trim()).length;
   const activeHeadersCount = headers.filter((h) => h.enabled && h.key.trim()).length;
-  const hasBody = bodyType !== 'none' && body.trim().length > 0;
+  const activeFormCount = formUrlEncoded.filter((f) => f.enabled && f.key.trim()).length;
+  const activeMultipartCount = multipartFormData.filter((m) => m.enabled && m.key.trim()).length;
+
+  const hasBody =
+    (bodyType === 'json' || bodyType === 'text') && body.trim().length > 0
+      ? true
+      : bodyType === 'x-www-form-urlencoded'
+      ? activeFormCount > 0
+      : bodyType === 'multipart/form-data'
+      ? activeMultipartCount > 0
+      : false;
+
   const hasAuth = auth.type !== 'none';
 
   return (
@@ -362,7 +457,7 @@ export default function RequestEditor({
         <button
           type="button"
           onClick={() => setIsCodeModalOpen(true)}
-          className="bg-slate-800 hover:bg-slate-750 text-slate-300 hover:text-white font-semibold text-xs py-2 px-3.5 rounded-lg border border-slate-700/80 transition duration-150 flex items-center space-x-1.5 cursor-pointer shadow-sm shrink-0"
+          className="bg-slate-800 hover:bg-slate-750 text-slate-300 hover:text-white font-semibold text-xs py-2 px-3 rounded-lg border border-slate-700/80 transition duration-150 flex items-center space-x-1.5 cursor-pointer shadow-sm shrink-0"
           title="Generate code snippet (cURL, fetch, Python, Axios)"
         >
           <svg className="w-3.5 h-3.5 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -370,6 +465,36 @@ export default function RequestEditor({
           </svg>
           <span>Code</span>
         </button>
+
+        {/* Import Button */}
+        {onImport && (
+          <button
+            type="button"
+            onClick={onImport}
+            className="bg-slate-800 hover:bg-slate-750 text-slate-300 hover:text-white font-semibold text-xs py-2 px-3 rounded-lg border border-slate-700/80 transition duration-150 flex items-center space-x-1.5 cursor-pointer shadow-sm shrink-0"
+            title="Import request from JSON"
+          >
+            <svg className="w-3.5 h-3.5 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+            </svg>
+            <span>Import</span>
+          </button>
+        )}
+
+        {/* Export Button */}
+        {onExport && (
+          <button
+            type="button"
+            onClick={onExport}
+            className="bg-slate-800 hover:bg-slate-750 text-slate-300 hover:text-white font-semibold text-xs py-2 px-3 rounded-lg border border-slate-700/80 transition duration-150 flex items-center space-x-1.5 cursor-pointer shadow-sm shrink-0"
+            title="Export request as APIForge JSON"
+          >
+            <svg className="w-3.5 h-3.5 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+            </svg>
+            <span>Export</span>
+          </button>
+        )}
 
         {/* Send / Cancel Button */}
         {isSending ? (
@@ -643,6 +768,8 @@ export default function RequestEditor({
                       { id: 'none', label: 'None' },
                       { id: 'json', label: 'JSON' },
                       { id: 'text', label: 'Text' },
+                      { id: 'x-www-form-urlencoded', label: 'Form URL Encoded' },
+                      { id: 'multipart/form-data', label: 'Multipart Form' },
                     ] as const
                   ).map((type) => (
                     <button
@@ -660,8 +787,8 @@ export default function RequestEditor({
                   ))}
                 </div>
 
-                {/* Body Actions & Validation Indicator */}
-                {bodyType !== 'none' && (
+                {/* Body Actions & Validation Indicator (JSON / Text modes) */}
+                {(bodyType === 'json' || bodyType === 'text') && (
                   <div className="flex items-center space-x-2">
                     {/* JSON live status indicator */}
                     {bodyType === 'json' && !jsonValidation.isEmpty && (
@@ -721,8 +848,8 @@ export default function RequestEditor({
                 )}
               </div>
 
-              {/* Body Content Area */}
-              {bodyType === 'none' ? (
+              {/* 1. None View */}
+              {bodyType === 'none' && (
                 <div className="flex flex-col items-center justify-center py-10 text-center space-y-2 border border-dashed border-slate-850 rounded-lg bg-slate-950/20 select-none">
                   <div className="w-9 h-9 rounded-full bg-slate-900 flex items-center justify-center border border-slate-800 text-slate-500">
                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -731,10 +858,13 @@ export default function RequestEditor({
                   </div>
                   <p className="text-xs font-semibold text-slate-400">This request does not have a body</p>
                   <p className="text-[11px] text-slate-600 max-w-sm">
-                    Select <span className="text-indigo-400 font-mono">JSON</span> or <span className="text-indigo-400 font-mono">Text</span> above to attach a payload.
+                    Select a body type above (<span className="text-indigo-400 font-mono">JSON</span>, <span className="text-indigo-400 font-mono">Text</span>, <span className="text-indigo-400 font-mono">Form URL Encoded</span>, or <span className="text-indigo-400 font-mono">Multipart Form</span>) to attach a payload.
                   </p>
                 </div>
-              ) : (
+              )}
+
+              {/* 2. JSON & Text Views */}
+              {(bodyType === 'json' || bodyType === 'text') && (
                 <div className="space-y-2">
                   <div className="relative">
                     <textarea
@@ -776,6 +906,232 @@ export default function RequestEditor({
                     </span>
                     <span>
                       {body.length} characters {body.length > 0 && `• ${body.split('\n').length} lines`}
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {/* 3. Form URL Encoded View */}
+              {bodyType === 'x-www-form-urlencoded' && (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-2">
+                      <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">
+                        Form URL Encoded Fields
+                      </span>
+                      <span className="text-[10px] font-mono text-indigo-400 bg-indigo-950/60 border border-indigo-800/40 px-2 py-0.5 rounded-full">
+                        application/x-www-form-urlencoded
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleAddFormUrlEncoded}
+                      className="text-xs text-indigo-400 hover:text-indigo-300 font-semibold flex items-center space-x-1.5 transition duration-150 active:scale-95 cursor-pointer"
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
+                      </svg>
+                      <span>Add Field</span>
+                    </button>
+                  </div>
+
+                  {formUrlEncoded.length === 0 ? (
+                    <div className="text-center py-8 border border-dashed border-slate-800 rounded-lg text-slate-500 select-none">
+                      No form-urlencoded fields defined. Click "Add Field" to start.
+                    </div>
+                  ) : (
+                    <div className="border border-slate-800/80 rounded-lg overflow-hidden bg-slate-950/20">
+                      <div className="grid grid-cols-12 gap-2 border-b border-slate-850 p-2 bg-slate-900/20 text-[10px] font-bold uppercase tracking-wider text-slate-450 font-mono">
+                        <div className="col-span-1 text-center">Active</div>
+                        <div className="col-span-3">Key</div>
+                        <div className="col-span-3">Value</div>
+                        <div className="col-span-4">Description</div>
+                        <div className="col-span-1 text-center">Delete</div>
+                      </div>
+
+                      <div className="divide-y divide-slate-850/80">
+                        {formUrlEncoded.map((field) => (
+                          <div
+                            key={field.id}
+                            className={`grid grid-cols-12 gap-2 items-center p-2 hover:bg-slate-900/10 transition duration-150 ${
+                              !field.enabled ? 'opacity-55' : ''
+                            }`}
+                          >
+                            <div className="col-span-1 flex items-center justify-center">
+                              <input
+                                type="checkbox"
+                                checked={field.enabled}
+                                onChange={(e) => handleToggleFormUrlEncoded(field.id, e.target.checked)}
+                                className="w-3.5 h-3.5 rounded border-slate-800 text-indigo-600 bg-slate-950 focus:ring-indigo-500/30 cursor-pointer focus:ring-offset-0 focus:outline-none"
+                              />
+                            </div>
+
+                            <div className="col-span-3">
+                              <input
+                                type="text"
+                                value={field.key}
+                                onChange={(e) => handleUpdateFormUrlEncoded(field.id, 'key', e.target.value)}
+                                placeholder="Key"
+                                className="w-full bg-slate-950 border border-slate-850/85 rounded px-2 py-1 text-slate-300 placeholder-slate-700 font-mono text-xs focus:outline-none focus:border-indigo-500 transition"
+                              />
+                            </div>
+
+                            <div className="col-span-3">
+                              <input
+                                type="text"
+                                value={field.value}
+                                onChange={(e) => handleUpdateFormUrlEncoded(field.id, 'value', e.target.value)}
+                                placeholder="Value"
+                                className="w-full bg-slate-950 border border-slate-850/85 rounded px-2 py-1 text-slate-300 placeholder-slate-700 font-mono text-xs focus:outline-none focus:border-indigo-500 transition"
+                              />
+                            </div>
+
+                            <div className="col-span-4">
+                              <input
+                                type="text"
+                                value={field.description || ''}
+                                onChange={(e) => handleUpdateFormUrlEncoded(field.id, 'description', e.target.value)}
+                                placeholder="Description"
+                                className="w-full bg-slate-950 border border-slate-850/85 rounded px-2 py-1 text-slate-350 placeholder-slate-700 font-mono text-xs focus:outline-none focus:border-indigo-500 transition"
+                              />
+                            </div>
+
+                            <div className="col-span-1 flex items-center justify-center">
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteFormUrlEncoded(field.id)}
+                                className="text-slate-500 hover:text-rose-400 p-1 rounded transition duration-150 hover:bg-rose-950/20 active:scale-95 cursor-pointer"
+                                title="Delete Field"
+                              >
+                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                </svg>
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Character/Info bar */}
+                  <div className="flex items-center justify-between text-[11px] text-slate-500 font-mono px-1">
+                    <span>Content-Type: application/x-www-form-urlencoded</span>
+                    <span>
+                      {activeFormCount} enabled field{activeFormCount !== 1 ? 's' : ''} ({formUrlEncoded.length} total)
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {/* 4. Multipart Form Data View */}
+              {bodyType === 'multipart/form-data' && (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-2">
+                      <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">
+                        Multipart Form Fields (Text)
+                      </span>
+                      <span className="text-[10px] font-mono text-indigo-400 bg-indigo-950/60 border border-indigo-800/40 px-2 py-0.5 rounded-full">
+                        boundary: auto-generated
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleAddMultipart}
+                      className="text-xs text-indigo-400 hover:text-indigo-300 font-semibold flex items-center space-x-1.5 transition duration-150 active:scale-95 cursor-pointer"
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
+                      </svg>
+                      <span>Add Field</span>
+                    </button>
+                  </div>
+
+                  {multipartFormData.length === 0 ? (
+                    <div className="text-center py-8 border border-dashed border-slate-800 rounded-lg text-slate-500 select-none">
+                      No multipart fields defined. Click "Add Field" to start.
+                    </div>
+                  ) : (
+                    <div className="border border-slate-800/80 rounded-lg overflow-hidden bg-slate-950/20">
+                      <div className="grid grid-cols-12 gap-2 border-b border-slate-850 p-2 bg-slate-900/20 text-[10px] font-bold uppercase tracking-wider text-slate-450 font-mono">
+                        <div className="col-span-1 text-center">Active</div>
+                        <div className="col-span-3">Key (Field Name)</div>
+                        <div className="col-span-3">Value (Text)</div>
+                        <div className="col-span-4">Description</div>
+                        <div className="col-span-1 text-center">Delete</div>
+                      </div>
+
+                      <div className="divide-y divide-slate-850/80">
+                        {multipartFormData.map((field) => (
+                          <div
+                            key={field.id}
+                            className={`grid grid-cols-12 gap-2 items-center p-2 hover:bg-slate-900/10 transition duration-150 ${
+                              !field.enabled ? 'opacity-55' : ''
+                            }`}
+                          >
+                            <div className="col-span-1 flex items-center justify-center">
+                              <input
+                                type="checkbox"
+                                checked={field.enabled}
+                                onChange={(e) => handleToggleMultipart(field.id, e.target.checked)}
+                                className="w-3.5 h-3.5 rounded border-slate-800 text-indigo-600 bg-slate-950 focus:ring-indigo-500/30 cursor-pointer focus:ring-offset-0 focus:outline-none"
+                              />
+                            </div>
+
+                            <div className="col-span-3">
+                              <input
+                                type="text"
+                                value={field.key}
+                                onChange={(e) => handleUpdateMultipart(field.id, 'key', e.target.value)}
+                                placeholder="Key"
+                                className="w-full bg-slate-950 border border-slate-850/85 rounded px-2 py-1 text-slate-300 placeholder-slate-700 font-mono text-xs focus:outline-none focus:border-indigo-500 transition"
+                              />
+                            </div>
+
+                            <div className="col-span-3">
+                              <input
+                                type="text"
+                                value={field.value}
+                                onChange={(e) => handleUpdateMultipart(field.id, 'value', e.target.value)}
+                                placeholder="Text Value"
+                                className="w-full bg-slate-950 border border-slate-850/85 rounded px-2 py-1 text-slate-300 placeholder-slate-700 font-mono text-xs focus:outline-none focus:border-indigo-500 transition"
+                              />
+                            </div>
+
+                            <div className="col-span-4">
+                              <input
+                                type="text"
+                                value={field.description || ''}
+                                onChange={(e) => handleUpdateMultipart(field.id, 'description', e.target.value)}
+                                placeholder="Description"
+                                className="w-full bg-slate-950 border border-slate-850/85 rounded px-2 py-1 text-slate-350 placeholder-slate-700 font-mono text-xs focus:outline-none focus:border-indigo-500 transition"
+                              />
+                            </div>
+
+                            <div className="col-span-1 flex items-center justify-center">
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteMultipart(field.id)}
+                                className="text-slate-500 hover:text-rose-400 p-1 rounded transition duration-150 hover:bg-rose-950/20 active:scale-95 cursor-pointer"
+                                title="Delete Field"
+                              >
+                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                </svg>
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Character/Info bar */}
+                  <div className="flex items-center justify-between text-[11px] text-slate-500 font-mono px-1">
+                    <span>Content-Type: multipart/form-data; boundary=&lt;runtime-generated&gt;</span>
+                    <span>
+                      {activeMultipartCount} enabled field{activeMultipartCount !== 1 ? 's' : ''} ({multipartFormData.length} total)
                     </span>
                   </div>
                 </div>
@@ -1008,6 +1364,8 @@ export default function RequestEditor({
           headers,
           bodyType,
           body,
+          formUrlEncoded,
+          multipartFormData,
           auth,
         }}
       />

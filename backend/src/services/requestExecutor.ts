@@ -36,7 +36,7 @@ export class RequestExecutorService {
     targetUrl: URL,
     method: string,
     headers: Record<string, string>,
-    body: string | undefined,
+    body: string | Buffer | undefined,
     timeoutMs: number,
     signal?: AbortSignal
   ): Promise<InternalHttpResponse> {
@@ -227,27 +227,78 @@ export class RequestExecutorService {
         requestHeaders[payload.auth.apiKey.key.trim()] = payload.auth.apiKey.value || '';
       }
 
-      // Default Content-Type if missing and body is present
+      // 5. Assemble Initial Request Body based on bodyType
+      let currentMethod = (payload.method || 'GET').toUpperCase();
+      let currentBody: string | Buffer | undefined = undefined;
+
       const hasContentType = Object.keys(requestHeaders).some(
         (k) => k.toLowerCase() === 'content-type'
       );
 
-      if (!hasContentType) {
-        if (payload.bodyType === 'json' && payload.body?.trim()) {
-          requestHeaders['Content-Type'] = 'application/json';
-        } else if (payload.bodyType === 'text' && payload.body?.trim()) {
-          requestHeaders['Content-Type'] = 'text/plain';
-        }
-      }
-
-      // 5. Assemble Initial Request Body
-      let currentMethod = (payload.method || 'GET').toUpperCase();
-      let currentBody: string | undefined = undefined;
-
       if (currentMethod !== 'GET' && currentMethod !== 'HEAD') {
-        if (payload.bodyType !== 'none' && payload.body && payload.body.length > 0) {
-          currentBody = payload.body;
-          requestHeaders['Content-Length'] = Buffer.byteLength(currentBody, 'utf8').toString();
+        if (payload.bodyType === 'json') {
+          if (payload.body && payload.body.length > 0) {
+            currentBody = payload.body;
+            requestHeaders['Content-Length'] = Buffer.byteLength(currentBody, 'utf8').toString();
+          }
+          if (!hasContentType) {
+            requestHeaders['Content-Type'] = 'application/json';
+          }
+        } else if (payload.bodyType === 'text') {
+          if (payload.body && payload.body.length > 0) {
+            currentBody = payload.body;
+            requestHeaders['Content-Length'] = Buffer.byteLength(currentBody, 'utf8').toString();
+          }
+          if (!hasContentType) {
+            requestHeaders['Content-Type'] = 'text/plain';
+          }
+        } else if (payload.bodyType === 'x-www-form-urlencoded') {
+          const params = new URLSearchParams();
+          if (Array.isArray(payload.formUrlEncoded)) {
+            for (const entry of payload.formUrlEncoded) {
+              if (entry.enabled && entry.key && entry.key.trim()) {
+                params.append(entry.key.trim(), entry.value || '');
+              }
+            }
+          }
+          const urlencodedStr = params.toString();
+          currentBody = Buffer.from(urlencodedStr, 'utf8');
+          requestHeaders['Content-Length'] = currentBody.length.toString();
+
+          // Ensure form-urlencoded Content-Type always overrides any existing or default Content-Type header
+          for (const k of Object.keys(requestHeaders)) {
+            if (k.toLowerCase() === 'content-type') {
+              delete requestHeaders[k];
+            }
+          }
+          requestHeaders['Content-Type'] = 'application/x-www-form-urlencoded; charset=UTF-8';
+        } else if (payload.bodyType === 'multipart/form-data') {
+          const formData = new FormData();
+          if (Array.isArray(payload.multipartFormData)) {
+            for (const field of payload.multipartFormData) {
+              if (field.enabled && field.key && field.key.trim()) {
+                formData.append(field.key.trim(), field.value || '');
+              }
+            }
+          }
+          // Build request via runtime fetch/Request to generate multipart boundary
+          const tempReq = new Request('http://localhost', {
+            method: 'POST',
+            body: formData,
+          });
+          const runtimeContentType = tempReq.headers.get('content-type') || 'multipart/form-data';
+
+          // Runtime-generated Content-Type including its boundary always takes precedence
+          for (const k of Object.keys(requestHeaders)) {
+            if (k.toLowerCase() === 'content-type') {
+              delete requestHeaders[k];
+            }
+          }
+          requestHeaders['Content-Type'] = runtimeContentType;
+
+          const arrayBuf = await tempReq.arrayBuffer();
+          currentBody = Buffer.from(arrayBuf);
+          requestHeaders['Content-Length'] = currentBody.length.toString();
         }
       }
 

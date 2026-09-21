@@ -17,8 +17,14 @@ export function cloneRequest(req: ApiRequest): ApiRequest {
     headers: Array.isArray(req.headers)
       ? req.headers.map((item) => ({ ...item }))
       : [],
-    bodyType: req.bodyType,
+    bodyType: req.bodyType || 'none',
     body: req.body || '',
+    formUrlEncoded: Array.isArray(req.formUrlEncoded)
+      ? req.formUrlEncoded.map((item) => ({ ...item }))
+      : [],
+    multipartFormData: Array.isArray(req.multipartFormData)
+      ? req.multipartFormData.map((item) => ({ ...item }))
+      : [],
     auth: {
       type: req.auth?.type || 'none',
       bearer: req.auth?.bearer ? { ...req.auth.bearer } : undefined,

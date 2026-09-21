@@ -79,9 +79,27 @@ export function resolveApiRequest(
     };
   });
 
-  // 4. Resolve Body (simple string substitution for text and JSON)
+  // 4. Resolve Body
   if (cloned.bodyType === 'json' || cloned.bodyType === 'text') {
     cloned.body = substituteText(cloned.body, varMap, 'Body', unresolved);
+  } else if (cloned.bodyType === 'x-www-form-urlencoded' && Array.isArray(cloned.formUrlEncoded)) {
+    cloned.formUrlEncoded = cloned.formUrlEncoded.map((field) => {
+      if (!field.enabled) return field;
+      return {
+        ...field,
+        key: substituteText(field.key, varMap, 'Form URL Encoded Key', unresolved),
+        value: substituteText(field.value, varMap, 'Form URL Encoded Value', unresolved),
+      };
+    });
+  } else if (cloned.bodyType === 'multipart/form-data' && Array.isArray(cloned.multipartFormData)) {
+    cloned.multipartFormData = cloned.multipartFormData.map((field) => {
+      if (!field.enabled) return field;
+      return {
+        ...field,
+        key: substituteText(field.key, varMap, 'Multipart Field Key', unresolved),
+        value: substituteText(field.value, varMap, 'Multipart Field Value', unresolved),
+      };
+    });
   }
 
   // 5. Resolve Authentication
