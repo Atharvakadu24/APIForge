@@ -135,7 +135,7 @@ export type ImportParseResult =
 
 /**
  * Parses and validates raw JSON input into an ApiRequest.
- * Supports both wrapped `{ request: { ... } }` and unwrapped `{ method, url, ... }` formats.
+ * Enforces the APIForge export structure, required request object, and required fields (method, URL).
  */
 export function validateAndParseImportedJson(jsonStr: string): ImportParseResult {
   if (!jsonStr || !jsonStr.trim()) {
@@ -150,20 +150,45 @@ export function validateAndParseImportedJson(jsonStr: string): ImportParseResult
     return { success: false, error: `JSON Parse Error: ${msg}` };
   }
 
-  if (!parsed || typeof parsed !== 'object') {
-    return { success: false, error: 'Import file must contain a JSON object.' };
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return { success: false, error: 'Import file must contain a valid JSON object.' };
   }
 
   const data = parsed as Record<string, unknown>;
 
-  // Check if wrapped in export envelope
-  const candidateReq =
-    data.request && typeof data.request === 'object'
-      ? (data.request as Record<string, unknown>)
-      : data;
+  // 1. Require the APIForge export structure containing the "request" object
+  if (!('request' in data)) {
+    return {
+      success: false,
+      error: 'Invalid APIForge export format: Missing required "request" object.',
+    };
+  }
 
-  // Validate HTTP Method
-  const rawMethod = typeof candidateReq.method === 'string' ? candidateReq.method.toUpperCase() : 'GET';
+  if (!data.request || typeof data.request !== 'object' || Array.isArray(data.request)) {
+    return {
+      success: false,
+      error: 'Invalid APIForge export format: "request" field must be an object.',
+    };
+  }
+
+  const candidateReq = data.request as Record<string, unknown>;
+
+  // 2. Validate required "method" field - Do NOT silently default missing method
+  if (!('method' in candidateReq) || candidateReq.method === undefined || candidateReq.method === null) {
+    return {
+      success: false,
+      error: 'Invalid APIForge request: Missing required "method" field.',
+    };
+  }
+
+  if (typeof candidateReq.method !== 'string' || !candidateReq.method.trim()) {
+    return {
+      success: false,
+      error: 'Invalid APIForge request: "method" must be a non-empty string.',
+    };
+  }
+
+  const rawMethod = candidateReq.method.trim().toUpperCase();
   if (!VALID_METHODS.includes(rawMethod as HttpMethod)) {
     return {
       success: false,
@@ -172,23 +197,122 @@ export function validateAndParseImportedJson(jsonStr: string): ImportParseResult
   }
   const method = rawMethod as HttpMethod;
 
-  // Validate URL
-  const url = typeof candidateReq.url === 'string' ? candidateReq.url : '';
-
-  // Validate Body Type
-  let rawBodyType = typeof candidateReq.bodyType === 'string' ? candidateReq.bodyType.toLowerCase() : 'none';
-  if (rawBodyType === 'urlencoded') rawBodyType = 'x-www-form-urlencoded';
-  if (rawBodyType === 'form-data') rawBodyType = 'multipart/form-data';
-
-  if (!VALID_BODY_TYPES.includes(rawBodyType as RequestBodyType)) {
+  // 3. Validate required "url" field - Do NOT silently default missing URL
+  if (!('url' in candidateReq) || candidateReq.url === undefined || candidateReq.url === null) {
     return {
       success: false,
-      error: `Unsupported body type "${candidateReq.bodyType}". Allowed types: ${VALID_BODY_TYPES.join(', ')}.`,
+      error: 'Invalid APIForge request: Missing required "url" field.',
     };
   }
-  const bodyType = rawBodyType as RequestBodyType;
 
-  // Validate and sanitize components
+  if (typeof candidateReq.url !== 'string') {
+    return {
+      success: false,
+      error: 'Invalid APIForge request: "url" must be a string.',
+    };
+  }
+
+  const trimmedUrl = candidateReq.url.trim();
+  if (trimmedUrl.length === 0) {
+    return {
+      success: false,
+      error: 'Invalid APIForge request: "url" cannot be empty.',
+    };
+  }
+  const url = candidateReq.url;
+
+  // 4. Validate bodyType (if present)
+  let bodyType: RequestBodyType = 'none';
+  if ('bodyType' in candidateReq && candidateReq.bodyType !== undefined && candidateReq.bodyType !== null) {
+    if (typeof candidateReq.bodyType !== 'string') {
+      return {
+        success: false,
+        error: 'Invalid APIForge request: "bodyType" must be a string.',
+      };
+    }
+    let rawBodyType = candidateReq.bodyType.trim().toLowerCase();
+    if (rawBodyType === 'urlencoded') rawBodyType = 'x-www-form-urlencoded';
+    if (rawBodyType === 'form-data') rawBodyType = 'multipart/form-data';
+
+    if (!VALID_BODY_TYPES.includes(rawBodyType as RequestBodyType)) {
+      return {
+        success: false,
+        error: `Unsupported body type "${candidateReq.bodyType}". Allowed types: ${VALID_BODY_TYPES.join(', ')}.`,
+      };
+    }
+    bodyType = rawBodyType as RequestBodyType;
+  }
+
+  // 5. Validate queryParams (if present, must be an array)
+  if ('queryParams' in candidateReq && candidateReq.queryParams !== undefined && candidateReq.queryParams !== null) {
+    if (!Array.isArray(candidateReq.queryParams)) {
+      return {
+        success: false,
+        error: 'Invalid APIForge request: "queryParams" must be an array.',
+      };
+    }
+  }
+
+  // 6. Validate headers (if present, must be an array)
+  if ('headers' in candidateReq && candidateReq.headers !== undefined && candidateReq.headers !== null) {
+    if (!Array.isArray(candidateReq.headers)) {
+      return {
+        success: false,
+        error: 'Invalid APIForge request: "headers" must be an array.',
+      };
+    }
+  }
+
+  // 7. Validate formUrlEncoded (if present, must be an array)
+  if ('formUrlEncoded' in candidateReq && candidateReq.formUrlEncoded !== undefined && candidateReq.formUrlEncoded !== null) {
+    if (!Array.isArray(candidateReq.formUrlEncoded)) {
+      return {
+        success: false,
+        error: 'Invalid APIForge request: "formUrlEncoded" must be an array.',
+      };
+    }
+  }
+
+  // 8. Validate multipartFormData (if present, must be an array)
+  if ('multipartFormData' in candidateReq && candidateReq.multipartFormData !== undefined && candidateReq.multipartFormData !== null) {
+    if (!Array.isArray(candidateReq.multipartFormData)) {
+      return {
+        success: false,
+        error: 'Invalid APIForge request: "multipartFormData" must be an array.',
+      };
+    }
+  }
+
+  // 9. Validate auth (if present, must be an object)
+  if ('auth' in candidateReq && candidateReq.auth !== undefined && candidateReq.auth !== null) {
+    if (typeof candidateReq.auth !== 'object' || Array.isArray(candidateReq.auth)) {
+      return {
+        success: false,
+        error: 'Invalid APIForge request: "auth" must be an object.',
+      };
+    }
+    const rawAuth = candidateReq.auth as Record<string, unknown>;
+    if (rawAuth.type !== undefined && rawAuth.type !== null) {
+      if (typeof rawAuth.type !== 'string' || !['none', 'bearer', 'apiKey'].includes(rawAuth.type)) {
+        return {
+          success: false,
+          error: `Unsupported auth type "${rawAuth.type}". Allowed types: none, bearer, apiKey.`,
+        };
+      }
+    }
+  }
+
+  // 10. Validate body (if present, must be a string)
+  if ('body' in candidateReq && candidateReq.body !== undefined && candidateReq.body !== null) {
+    if (typeof candidateReq.body !== 'string') {
+      return {
+        success: false,
+        error: 'Invalid APIForge request: "body" must be a string.',
+      };
+    }
+  }
+
+  // Sanitize components
   const queryParams = sanitizeKeyValueEntries(candidateReq.queryParams);
   const headers = sanitizeKeyValueEntries(candidateReq.headers);
   const formUrlEncoded = sanitizeKeyValueEntries(candidateReq.formUrlEncoded);
