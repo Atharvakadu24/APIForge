@@ -3,7 +3,7 @@ import type { User } from '@supabase/supabase-js';
 import Header from './Header';
 import Sidebar from './Sidebar';
 import type { HistoryItem } from '../types/history';
-import type { Collection, SavedRequest } from '../types/collection';
+import type { Collection, CollectionFolder, SavedRequest } from '../types/collection';
 import type { Environment } from '../types/environment';
 
 interface AppShellProps {
@@ -15,13 +15,25 @@ interface AppShellProps {
   onOpenCreateCollection: () => void;
   onOpenRenameCollection: (collection: Collection) => void;
   onDeleteCollectionPrompt: (collection: Collection) => void;
+  onOpenCreateFolder: (collectionId: string, parentFolderId?: string | null) => void;
+  onOpenRenameFolder: (folder: CollectionFolder) => void;
+  onDeleteFolderPrompt: (folder: CollectionFolder, collection: Collection) => void;
+  onOpenMoveRequest: (request: SavedRequest) => void;
+  onOpenMoveFolder: (folder: CollectionFolder, collection: Collection) => void;
   onDeleteSavedRequest: (collectionId: string, requestId: string, e: React.MouseEvent) => void;
+  onReorderCollections: (direction: 'up' | 'down', collectionId: string) => void;
+  onReorderFolders: (direction: 'up' | 'down', collectionId: string, parentFolderId: string | null, folderId: string) => void;
+  onReorderRequests: (direction: 'up' | 'down', collectionId: string, folderId: string | null, requestId: string) => void;
   onNewRequest: () => void;
   history: HistoryItem[];
   selectedHistoryId: string | null;
+  selectedHistoryIds?: string[];
   onSelectHistory: (item: HistoryItem) => void;
+  onToggleSelectHistory?: (id: string) => void;
+  onToggleSelectAllHistory?: () => void;
+  onDeleteSelectedHistory?: () => void;
   onClearHistory: () => void;
-  onDeleteHistoryItem: (id: string, e: React.MouseEvent) => void;
+  onDeleteHistoryItem?: (id: string, e: React.MouseEvent) => void;
   environments: Environment[];
   activeEnvironmentId: string | null;
   onSelectEnvironment: (id: string | null) => void;
@@ -40,11 +52,23 @@ export default function AppShell({
   onOpenCreateCollection,
   onOpenRenameCollection,
   onDeleteCollectionPrompt,
+  onOpenCreateFolder,
+  onOpenRenameFolder,
+  onDeleteFolderPrompt,
+  onOpenMoveRequest,
+  onOpenMoveFolder,
   onDeleteSavedRequest,
+  onReorderCollections,
+  onReorderFolders,
+  onReorderRequests,
   onNewRequest,
   history,
   selectedHistoryId,
+  selectedHistoryIds,
   onSelectHistory,
+  onToggleSelectHistory,
+  onToggleSelectAllHistory,
+  onDeleteSelectedHistory,
   onClearHistory,
   onDeleteHistoryItem,
   environments,
@@ -71,7 +95,7 @@ export default function AppShell({
       {/* Main Workspace Frame */}
       <div className="flex flex-1 overflow-hidden">
         {/* Left Navigation Sidebar */}
-        <div className="hidden sm:block">
+        <div className="hidden sm:block h-full">
           <Sidebar
             collections={collections}
             isLoadingCollections={isLoadingCollections}
@@ -80,11 +104,23 @@ export default function AppShell({
             onOpenCreateCollection={onOpenCreateCollection}
             onOpenRenameCollection={onOpenRenameCollection}
             onDeleteCollectionPrompt={onDeleteCollectionPrompt}
+            onOpenCreateFolder={onOpenCreateFolder}
+            onOpenRenameFolder={onOpenRenameFolder}
+            onDeleteFolderPrompt={onDeleteFolderPrompt}
+            onOpenMoveRequest={onOpenMoveRequest}
+            onOpenMoveFolder={onOpenMoveFolder}
             onDeleteSavedRequest={onDeleteSavedRequest}
+            onReorderCollections={onReorderCollections}
+            onReorderFolders={onReorderFolders}
+            onReorderRequests={onReorderRequests}
             onNewRequest={onNewRequest}
             history={history}
             selectedHistoryId={selectedHistoryId}
+            selectedHistoryIds={selectedHistoryIds}
             onSelectHistory={onSelectHistory}
+            onToggleSelectHistory={onToggleSelectHistory}
+            onToggleSelectAllHistory={onToggleSelectAllHistory}
+            onDeleteSelectedHistory={onDeleteSelectedHistory}
             onClearHistory={onClearHistory}
             onDeleteHistoryItem={onDeleteHistoryItem}
           />
@@ -98,3 +134,4 @@ export default function AppShell({
     </div>
   );
 }
+

@@ -32,8 +32,14 @@ export default function ConfirmModal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-fade-in">
-      <div className="bg-slate-900 border border-slate-800 rounded-xl shadow-2xl max-w-md w-full overflow-hidden">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-fade-in"
+      onClick={onClose}
+    >
+      <div
+        className="bg-slate-900 border border-slate-800 rounded-xl shadow-2xl max-w-md w-full overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="p-5">
           <div className="flex items-start space-x-3.5">
             <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${isDestructive ? 'bg-rose-950/60 text-rose-400 border border-rose-800/40' : 'bg-indigo-950/60 text-indigo-400 border border-indigo-800/40'}`}>

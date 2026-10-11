@@ -15,7 +15,21 @@ export function loadCollectionsFromStorage(): Collection[] {
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     if (Array.isArray(parsed)) {
-      return parsed;
+      return parsed.map((col: any, idx: number) => ({
+        id: col.id || '',
+        name: col.name || 'Untitled Collection',
+        orderIndex: typeof col.orderIndex === 'number' ? col.orderIndex : idx,
+        createdAt: typeof col.createdAt === 'number' ? col.createdAt : Date.now(),
+        updatedAt: typeof col.updatedAt === 'number' ? col.updatedAt : Date.now(),
+        folders: Array.isArray(col.folders) ? col.folders : [],
+        requests: Array.isArray(col.requests)
+          ? col.requests.map((r: any, rIdx: number) => ({
+              ...r,
+              folderId: r.folderId ?? null,
+              orderIndex: typeof r.orderIndex === 'number' ? r.orderIndex : rIdx,
+            }))
+          : [],
+      }));
     }
     return [];
   } catch (err) {

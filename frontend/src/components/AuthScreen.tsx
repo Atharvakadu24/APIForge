@@ -1,10 +1,13 @@
 import React, { useState } from 'react';
 import { useAuth } from '../hooks/useAuth';
+import { formatAuthError } from '../utils/authErrors';
+
+export type AuthMode = 'signin' | 'signup' | 'forgot_password';
 
 export default function AuthScreen() {
-  const { signInWithPassword, signUpWithPassword } = useAuth();
+  const { signInWithPassword, signUpWithPassword, resetPasswordForEmail } = useAuth();
 
-  const [mode, setMode] = useState<'signin' | 'signup'>('signin');
+  const [mode, setMode] = useState<AuthMode>('signin');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -28,6 +31,10 @@ export default function AuthScreen() {
     if (!emailRegex.test(emailTrimmed)) {
       setErrorMessage('Please enter a valid email address.');
       return false;
+    }
+
+    if (mode === 'forgot_password') {
+      return true;
     }
 
     if (!password) {
@@ -62,16 +69,16 @@ export default function AuthScreen() {
       if (mode === 'signin') {
         const { error } = await signInWithPassword(email, password);
         if (error) {
-          setErrorMessage(error.message || 'Failed to sign in. Please check your credentials.');
+          setErrorMessage(formatAuthError(error));
         }
-      } else {
+      } else if (mode === 'signup') {
         const { error, user, session } = await signUpWithPassword(email, password);
         if (error) {
-          setErrorMessage(error.message || 'Failed to create account.');
+          setErrorMessage(formatAuthError(error));
         } else if (user && !session) {
-          // Email confirmation enabled on project
+          // Email confirmation is required by project
           setSuccessMessage(
-            'Account created successfully! Please check your email inbox to confirm your email before signing in.'
+            'Account created successfully! Please check your inbox for a confirmation link before signing in.'
           );
           setMode('signin');
           setPassword('');
@@ -80,16 +87,24 @@ export default function AuthScreen() {
           // Instant sign in if email confirmation is disabled
           setSuccessMessage('Account created and signed in successfully!');
         }
+      } else if (mode === 'forgot_password') {
+        const { error } = await resetPasswordForEmail(email);
+        if (error) {
+          setErrorMessage(formatAuthError(error));
+        } else {
+          setSuccessMessage(
+            'If an account exists for this email, a password reset link has been sent. Please check your inbox.'
+          );
+        }
       }
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'An unexpected authentication error occurred.';
-      setErrorMessage(msg);
+      setErrorMessage(formatAuthError(err));
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const toggleMode = (targetMode: 'signin' | 'signup') => {
+  const switchMode = (targetMode: AuthMode) => {
     setMode(targetMode);
     setErrorMessage(null);
     setSuccessMessage(null);
@@ -102,47 +117,64 @@ export default function AuthScreen() {
       <div className="absolute bottom-1/4 right-1/3 w-80 h-80 bg-purple-600/10 rounded-full blur-3xl pointer-events-none" />
 
       {/* Main Authentication Card */}
-      <div className="max-w-md w-full bg-slate-900/90 border border-slate-800 rounded-2xl shadow-2xl backdrop-blur-md p-6 sm:p-8 z-10">
+      <div className="max-w-md w-full bg-slate-900/90 border border-slate-800 rounded-2xl shadow-2xl backdrop-blur-md p-6 sm:p-8 z-10 animate-fade-in">
         {/* Brand Header */}
         <div className="flex flex-col items-center text-center mb-6">
           <div className="w-12 h-12 rounded-xl bg-gradient-to-tr from-indigo-600 via-indigo-500 to-purple-600 flex items-center justify-center font-extrabold text-white text-lg shadow-lg shadow-indigo-500/20 mb-3">
             AF
           </div>
           <h1 className="text-xl font-extrabold tracking-tight text-slate-100">
-            {mode === 'signin' ? 'Welcome to APIForge' : 'Create an Account'}
+            {mode === 'signin' && 'Welcome to APIForge'}
+            {mode === 'signup' && 'Create an Account'}
+            {mode === 'forgot_password' && 'Reset Your Password'}
           </h1>
           <p className="text-xs text-slate-400 mt-1 max-w-xs">
-            {mode === 'signin'
-              ? 'Sign in to access your API testing workspace and environments.'
-              : 'Join APIForge to build, test, and manage your API workflows.'}
+            {mode === 'signin' && 'Sign in to access your API testing workspace and environments.'}
+            {mode === 'signup' && 'Join APIForge to build, test, and manage your API workflows.'}
+            {mode === 'forgot_password' && 'Enter your registered email address to receive a secure recovery link.'}
           </p>
         </div>
 
-        {/* Tab Switcher */}
-        <div className="grid grid-cols-2 p-1 bg-slate-950 border border-slate-800 rounded-xl mb-5">
-          <button
-            type="button"
-            onClick={() => toggleMode('signin')}
-            className={`py-2 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
-              mode === 'signin'
-                ? 'bg-slate-850 text-indigo-400 shadow-sm'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            Sign In
-          </button>
-          <button
-            type="button"
-            onClick={() => toggleMode('signup')}
-            className={`py-2 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
-              mode === 'signup'
-                ? 'bg-slate-850 text-indigo-400 shadow-sm'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            Create Account
-          </button>
-        </div>
+        {/* Tab Switcher (Visible in Sign In and Sign Up modes) */}
+        {mode !== 'forgot_password' ? (
+          <div className="grid grid-cols-2 p-1 bg-slate-950 border border-slate-800 rounded-xl mb-5">
+            <button
+              type="button"
+              onClick={() => switchMode('signin')}
+              className={`py-2 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
+                mode === 'signin'
+                  ? 'bg-slate-850 text-indigo-400 shadow-sm'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              Sign In
+            </button>
+            <button
+              type="button"
+              onClick={() => switchMode('signup')}
+              className={`py-2 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
+                mode === 'signup'
+                  ? 'bg-slate-850 text-indigo-400 shadow-sm'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              Create Account
+            </button>
+          </div>
+        ) : (
+          <div className="mb-5 flex items-center justify-between">
+            <button
+              type="button"
+              onClick={() => switchMode('signin')}
+              className="text-xs text-indigo-400 hover:text-indigo-300 flex items-center space-x-1 font-semibold cursor-pointer transition"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+              </svg>
+              <span>Back to Sign In</span>
+            </button>
+          </div>
+        )}
 
         {/* Status Banners */}
         {errorMessage && (
@@ -189,51 +221,62 @@ export default function AuthScreen() {
             </div>
           </div>
 
-          {/* Password field */}
-          <div>
-            <div className="flex items-center justify-between mb-1.5">
-              <label className="block text-xs font-semibold text-slate-300" htmlFor="auth-password">
-                Password
-              </label>
-              {mode === 'signup' && (
-                <span className="text-[10px] text-slate-500">Min. 6 characters</span>
-              )}
-            </div>
-            <div className="relative flex items-center">
-              <span className="absolute left-3 text-slate-500 pointer-events-none">
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                </svg>
-              </span>
-              <input
-                id="auth-password"
-                type={showPassword ? 'text' : 'password'}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
-                required
-                autoComplete={mode === 'signin' ? 'current-password' : 'new-password'}
-                className="w-full bg-slate-950 border border-slate-800 rounded-lg pl-9 pr-10 py-2.5 text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/30 transition"
-              />
-              <button
-                type="button"
-                onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 text-slate-500 hover:text-slate-300 transition cursor-pointer"
-                title={showPassword ? 'Hide password' : 'Show password'}
-              >
-                {showPassword ? (
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l18 18" />
-                  </svg>
+          {/* Password field (Sign In & Sign Up) */}
+          {mode !== 'forgot_password' && (
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="block text-xs font-semibold text-slate-300" htmlFor="auth-password">
+                  Password
+                </label>
+                {mode === 'signin' ? (
+                  <button
+                    type="button"
+                    onClick={() => switchMode('forgot_password')}
+                    className="text-[11px] text-indigo-400 hover:text-indigo-300 font-medium cursor-pointer transition underline-offset-2 hover:underline"
+                  >
+                    Forgot password?
+                  </button>
                 ) : (
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                  </svg>
+                  <span className="text-[10px] text-slate-500">Min. 6 characters</span>
                 )}
-              </button>
+              </div>
+              <div className="relative flex items-center">
+                <span className="absolute left-3 text-slate-500 pointer-events-none">
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                  </svg>
+                </span>
+                <input
+                  id="auth-password"
+                  type={showPassword ? 'text' : 'password'}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="••••••••"
+                  required
+                  autoComplete={mode === 'signin' ? 'current-password' : 'new-password'}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-lg pl-9 pr-10 py-2.5 text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/30 transition"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 text-slate-500 hover:text-slate-300 transition cursor-pointer"
+                  title={showPassword ? 'Hide password' : 'Show password'}
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                >
+                  {showPassword ? (
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l18 18" />
+                    </svg>
+                  ) : (
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                    </svg>
+                  )}
+                </button>
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Confirm password on Sign Up */}
           {mode === 'signup' && (
@@ -273,10 +316,18 @@ export default function AuthScreen() {
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
                 </svg>
-                <span>{mode === 'signin' ? 'Signing in...' : 'Creating account...'}</span>
+                <span>
+                  {mode === 'signin' && 'Signing in...'}
+                  {mode === 'signup' && 'Creating account...'}
+                  {mode === 'forgot_password' && 'Sending reset link...'}
+                </span>
               </>
             ) : (
-              <span>{mode === 'signin' ? 'Sign In to Workspace' : 'Create Account'}</span>
+              <span>
+                {mode === 'signin' && 'Sign In to Workspace'}
+                {mode === 'signup' && 'Create Account'}
+                {mode === 'forgot_password' && 'Send Password Reset Email'}
+              </span>
             )}
           </button>
         </form>
@@ -284,23 +335,36 @@ export default function AuthScreen() {
         {/* Footer info */}
         <div className="mt-6 pt-4 border-t border-slate-800/80 text-center">
           <p className="text-[11px] text-slate-500">
-            {mode === 'signin' ? (
+            {mode === 'signin' && (
               <>
                 Don&apos;t have an account yet?{' '}
                 <button
                   type="button"
-                  onClick={() => toggleMode('signup')}
+                  onClick={() => switchMode('signup')}
                   className="text-indigo-400 hover:text-indigo-300 font-semibold cursor-pointer underline-offset-2 hover:underline"
                 >
                   Create one here
                 </button>
               </>
-            ) : (
+            )}
+            {mode === 'signup' && (
               <>
                 Already have an account?{' '}
                 <button
                   type="button"
-                  onClick={() => toggleMode('signin')}
+                  onClick={() => switchMode('signin')}
+                  className="text-indigo-400 hover:text-indigo-300 font-semibold cursor-pointer underline-offset-2 hover:underline"
+                >
+                  Sign in here
+                </button>
+              </>
+            )}
+            {mode === 'forgot_password' && (
+              <>
+                Remember your password?{' '}
+                <button
+                  type="button"
+                  onClick={() => switchMode('signin')}
                   className="text-indigo-400 hover:text-indigo-300 font-semibold cursor-pointer underline-offset-2 hover:underline"
                 >
                   Sign in here

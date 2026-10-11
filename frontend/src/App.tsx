@@ -1,22 +1,25 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import type { User } from '@supabase/supabase-js';
 import { supabase } from './lib/supabase';
 import { AuthProvider } from './contexts/AuthContext';
 import { useAuth } from './hooks/useAuth';
 import AuthScreen from './components/AuthScreen';
+import ResetPasswordScreen from './components/ResetPasswordScreen';
 import LoadingScreen from './components/LoadingScreen';
 import AppShell from './components/AppShell';
 import RequestEditor from './components/RequestEditor';
 import ResponsePanel from './components/ResponsePanel';
 import SaveRequestModal from './components/SaveRequestModal';
 import CollectionModal from './components/CollectionModal';
+import FolderModal from './components/FolderModal';
+import MoveItemModal, { type MoveItemTarget } from './components/MoveItemModal';
 import ConfirmModal from './components/ConfirmModal';
 import EnvironmentModal from './components/EnvironmentModal';
 import CommandPaletteModal from './components/CommandPaletteModal';
 import ImportRequestModal from './components/ImportRequestModal';
 import type { ApiRequest, HttpMethod, KeyValueEntry, RequestAuth, RequestBodyType, ResponseData } from './types/request';
 import type { HistoryItem } from './types/history';
-import type { Collection, SavedRequest } from './types/collection';
+import type { Collection, CollectionFolder, SavedRequest } from './types/collection';
 import type { Environment, EnvironmentVariable } from './types/environment';
 import * as collectionService from './services/collectionService';
 import * as environmentService from './services/environmentService';
@@ -33,7 +36,6 @@ import { resolveApiRequest } from './utils/variableResolver';
 import { getApiUrl } from './config';
 import { buildUrlWithParams, syncUrlToParams, isRequestDirty } from './utils/urlParamsSync';
 import { downloadRequestJsonFile } from './utils/importExportUtils';
-
 
 const DEFAULT_REQUEST: ApiRequest = {
   method: 'GET',
@@ -52,6 +54,24 @@ const DEFAULT_REQUEST: ApiRequest = {
   },
 };
 
+function getAllRequestsFromFolders(folders: CollectionFolder[]): SavedRequest[] {
+  const reqs: SavedRequest[] = [];
+  for (const f of folders) {
+    if (f.requests) reqs.push(...f.requests);
+    if (f.subfolders) reqs.push(...getAllRequestsFromFolders(f.subfolders));
+  }
+  return reqs;
+}
+
+function getAllRequestsFromCollections(collections: Collection[]): SavedRequest[] {
+  const reqs: SavedRequest[] = [];
+  for (const col of collections) {
+    if (col.requests) reqs.push(...col.requests);
+    if (col.folders) reqs.push(...getAllRequestsFromFolders(col.folders));
+  }
+  return reqs;
+}
+
 interface AuthenticatedWorkspaceProps {
   user: User;
   onSignOut: () => void;
@@ -62,7 +82,7 @@ function AuthenticatedWorkspace({ user, onSignOut }: AuthenticatedWorkspaceProps
   const [isSending, setIsSending] = useState(false);
   const [response, setResponse] = useState<ResponseData | null>(null);
   const [editorResetSignal, setEditorResetSignal] = useState(0);
-  const activeAbortControllerRef = React.useRef<AbortController | null>(null);
+  const activeAbortControllerRef = useRef<AbortController | null>(null);
 
   // Clean up any in-flight request when component unmounts
   useEffect(() => {
@@ -77,12 +97,14 @@ function AuthenticatedWorkspace({ user, onSignOut }: AuthenticatedWorkspaceProps
   // History State (Persisted in Supabase PostgreSQL)
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [selectedHistoryId, setSelectedHistoryId] = useState<string | null>(null);
+  const [selectedHistoryIds, setSelectedHistoryIds] = useState<string[]>([]);
 
   // Collections State (Persisted in Supabase PostgreSQL)
   const [collections, setCollections] = useState<Collection[]>([]);
   const [isLoadingCollections, setIsLoadingCollections] = useState<boolean>(true);
   const [activeSavedRequestId, setActiveSavedRequestId] = useState<string | null>(null);
   const [cloudError, setCloudError] = useState<string | null>(null);
+  const [isMigrationRequired, setIsMigrationRequired] = useState(false);
 
   // Environments State (Persisted in Supabase PostgreSQL)
   const [environments, setEnvironments] = useState<Environment[]>([]);
@@ -106,15 +128,41 @@ function AuthenticatedWorkspace({ user, onSignOut }: AuthenticatedWorkspaceProps
     onSave: () => {},
   });
 
+  const [folderModalState, setFolderModalState] = useState<{
+    isOpen: boolean;
+    title: string;
+    initialName: string;
+    parentFolderName?: string | null;
+    onSave: (name: string) => void;
+  }>({
+    isOpen: false,
+    title: '',
+    initialName: '',
+    parentFolderName: null,
+    onSave: () => {},
+  });
+
+  const [moveItemModalState, setMoveItemModalState] = useState<{
+    isOpen: boolean;
+    target: MoveItemTarget | null;
+  }>({
+    isOpen: false,
+    target: null,
+  });
+
   const [confirmModalState, setConfirmModalState] = useState<{
     isOpen: boolean;
     title: string;
     message: string;
+    confirmLabel?: string;
+    isDestructive?: boolean;
     onConfirm: () => void;
   }>({
     isOpen: false,
     title: '',
     message: '',
+    confirmLabel: 'Delete',
+    isDestructive: true,
     onConfirm: () => {},
   });
 
@@ -140,15 +188,16 @@ function AuthenticatedWorkspace({ user, onSignOut }: AuthenticatedWorkspaceProps
 
       // 1. Fetch & sync Collections
       try {
-        const { data: cloudCols, error: colsErr } = await collectionService.getCollections();
+        const colsRes = await collectionService.getCollections();
 
-        if (colsErr) {
+        if (colsRes.error) {
           if (!isCancelled) {
-            setCloudError(`Failed to load collections from Supabase: ${colsErr.message}`);
+            setIsMigrationRequired(!!colsRes.isMigrationRequired);
+            setCloudError(colsRes.error.message);
             setIsLoadingCollections(false);
           }
         } else {
-          const initialCloud = cloudCols || [];
+          const initialCloud = colsRes.data || [];
           const migrationResult = await collectionService.syncOrMigrateLegacyCollections(
             user.id,
             initialCloud
@@ -311,14 +360,34 @@ function AuthenticatedWorkspace({ user, onSignOut }: AuthenticatedWorkspaceProps
   // Active Environment lookup
   const activeEnvironment = environments.find((e) => e.id === activeEnvironmentId) || null;
 
-  // Active saved request lookup
-  const activeSavedRequest = collections
-    .flatMap((c) => c.requests)
-    .find((r) => r.id === activeSavedRequestId);
+  // Active saved request lookup (across root requests and nested folder requests)
+  const allSavedRequests = useMemo(() => {
+    return getAllRequestsFromCollections(collections);
+  }, [collections]);
+
+  const activeSavedRequest = allSavedRequests.find((r) => r.id === activeSavedRequestId);
   const activeSavedRequestName = activeSavedRequest ? activeSavedRequest.name : null;
 
   // Compute dirty/unsaved changes state
   const isDirty = isRequestDirty(request, activeSavedRequest?.request);
+
+  // Helper to refresh collections from Supabase
+  const refreshCollections = async () => {
+    try {
+      const colsRes = await collectionService.getCollections();
+      if (colsRes.error) {
+        if (colsRes.isMigrationRequired) {
+          setIsMigrationRequired(true);
+        }
+        setCloudError(colsRes.error.message);
+      } else {
+        setCollections(colsRes.data || []);
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to refresh collections';
+      setCloudError(msg);
+    }
+  };
 
   // New Request handler (clears activeSavedRequestId, cancels in-flight requests, resets editor to clean default, and resets tab)
   const handleNewRequest = () => {
@@ -555,15 +624,67 @@ function AuthenticatedWorkspace({ user, onSignOut }: AuthenticatedWorkspaceProps
     setSelectedHistoryId(item.id);
   };
 
-  const handleClearHistory = async () => {
-    setCloudError(null);
-    const { error } = await historyService.clearHistory();
-    if (error) {
-      setCloudError(`Failed to clear request history: ${error.message}`);
-      return;
+  const handleToggleSelectHistory = (id: string) => {
+    setSelectedHistoryIds((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+    );
+  };
+
+  const handleToggleSelectAllHistory = () => {
+    if (selectedHistoryIds.length === history.length && history.length > 0) {
+      setSelectedHistoryIds([]);
+    } else {
+      setSelectedHistoryIds(history.map((item) => item.id));
     }
-    setHistory([]);
-    setSelectedHistoryId(null);
+  };
+
+  const handleDeleteSelectedHistoryPrompt = () => {
+    const count = selectedHistoryIds.length;
+    if (count === 0) return;
+
+    setConfirmModalState({
+      isOpen: true,
+      title: 'Delete Selected History',
+      message: `Are you sure you want to delete ${count} selected history record${count !== 1 ? 's' : ''}? This will permanently remove them from your Supabase database. This action cannot be undone.`,
+      confirmLabel: `Delete Selected (${count})`,
+      isDestructive: true,
+      onConfirm: async () => {
+        setCloudError(null);
+        const idsToDelete = [...selectedHistoryIds];
+        const { error } = await historyService.deleteHistoryItems(idsToDelete);
+        if (error) {
+          setCloudError(`Failed to delete selected history items: ${error.message}`);
+          return;
+        }
+        setHistory((prev) => prev.filter((item) => !idsToDelete.includes(item.id)));
+        setSelectedHistoryIds([]);
+        if (selectedHistoryId && idsToDelete.includes(selectedHistoryId)) {
+          setSelectedHistoryId(null);
+        }
+      },
+    });
+  };
+
+  const handleClearHistoryPrompt = () => {
+    const countText = history.length > 0 ? ` (${history.length} request${history.length !== 1 ? 's' : ''})` : '';
+    setConfirmModalState({
+      isOpen: true,
+      title: 'Clear Request History',
+      message: `Are you sure you want to clear your entire request history${countText}? This will permanently delete all executed request history from your Supabase database. This action cannot be undone.`,
+      confirmLabel: 'Clear History',
+      isDestructive: true,
+      onConfirm: async () => {
+        setCloudError(null);
+        const { error } = await historyService.clearHistory();
+        if (error) {
+          setCloudError(`Failed to clear request history: ${error.message}`);
+          return;
+        }
+        setHistory([]);
+        setSelectedHistoryIds([]);
+        setSelectedHistoryId(null);
+      },
+    });
   };
 
   const handleDeleteHistoryItem = async (id: string, e: React.MouseEvent) => {
@@ -575,6 +696,7 @@ function AuthenticatedWorkspace({ user, onSignOut }: AuthenticatedWorkspaceProps
       return;
     }
     setHistory((prev) => prev.filter((item) => item.id !== id));
+    setSelectedHistoryIds((prev) => prev.filter((selectedId) => selectedId !== id));
     if (selectedHistoryId === id) {
       setSelectedHistoryId(null);
     }
@@ -585,25 +707,24 @@ function AuthenticatedWorkspace({ user, onSignOut }: AuthenticatedWorkspaceProps
     setCloudError(null);
     const { data, error } = await collectionService.createCollection(name);
     if (error || !data) {
-      setCloudError(`Failed to create collection: ${error?.message || 'Unknown error'}`);
-      throw new Error(error?.message || 'Failed to create collection');
+      const msg = error?.message || 'Failed to create collection';
+      setCloudError(`Failed to create collection: ${msg}`);
+      throw new Error(msg);
     }
 
-    setCollections((prev) => [...prev, data]);
+    await refreshCollections();
     return data.id;
   };
 
   const handleRenameCollection = async (collectionId: string, newName: string) => {
     setCloudError(null);
-    const { data, error } = await collectionService.renameCollection(collectionId, newName);
-    if (error || !data) {
-      setCloudError(`Failed to rename collection: ${error?.message || 'Unknown error'}`);
+    const { error } = await collectionService.renameCollection(collectionId, newName);
+    if (error) {
+      setCloudError(`Failed to rename collection: ${error.message}`);
       return;
     }
 
-    setCollections((prev) =>
-      prev.map((c) => (c.id === collectionId ? { ...c, name: data.name, updatedAt: data.updatedAt } : c))
-    );
+    await refreshCollections();
   };
 
   const handleOpenCreateCollectionModal = () => {
@@ -629,10 +750,15 @@ function AuthenticatedWorkspace({ user, onSignOut }: AuthenticatedWorkspaceProps
   };
 
   const handleDeleteCollectionPrompt = (collection: Collection) => {
-    const count = collection.requests.length;
-    const message = count > 0
-      ? `Are you sure you want to delete "${collection.name}"? This will permanently remove the collection and all ${count} saved request${count > 1 ? 's' : ''} from your Supabase cloud database.`
-      : `Are you sure you want to delete "${collection.name}"?`;
+    const totalRequests = getAllRequestsFromCollections([collection]).length;
+    const folderCount = (collection.folders || []).length;
+
+    let details = '';
+    if (folderCount > 0 || totalRequests > 0) {
+      details = ` This will permanently delete the collection, ${folderCount} folder${folderCount !== 1 ? 's' : ''}, and all ${totalRequests} saved request${totalRequests !== 1 ? 's' : ''} from your Supabase cloud database.`;
+    }
+
+    const message = `Are you sure you want to delete "${collection.name}"?${details}`;
 
     setConfirmModalState({
       isOpen: true,
@@ -646,12 +772,253 @@ function AuthenticatedWorkspace({ user, onSignOut }: AuthenticatedWorkspaceProps
           return;
         }
 
-        setCollections((prev) => prev.filter((c) => c.id !== collection.id));
-        if (activeSavedRequest && activeSavedRequest.collectionId === collection.id) {
+        const colReqs = getAllRequestsFromCollections([collection]);
+        if (activeSavedRequestId && colReqs.some((r) => r.id === activeSavedRequestId)) {
           setActiveSavedRequestId(null);
         }
+
+        await refreshCollections();
       },
     });
+  };
+
+  // Folder Handlers
+  const handleOpenCreateFolder = (collectionId: string, parentFolderId?: string | null) => {
+    let parentFolderName: string | null = null;
+    if (parentFolderId) {
+      const col = collections.find((c) => c.id === collectionId);
+      if (col) {
+        const findF = (folders: CollectionFolder[]): CollectionFolder | null => {
+          for (const f of folders) {
+            if (f.id === parentFolderId) return f;
+            if (f.subfolders) {
+              const found = findF(f.subfolders);
+              if (found) return found;
+            }
+          }
+          return null;
+        };
+        const pf = findF(col.folders || []);
+        if (pf) parentFolderName = pf.name;
+      }
+    }
+
+    setFolderModalState({
+      isOpen: true,
+      title: parentFolderName ? `New Subfolder in "${parentFolderName}"` : 'New Folder',
+      initialName: '',
+      parentFolderName,
+      onSave: async (name: string) => {
+        setCloudError(null);
+        const { error } = await collectionService.createFolder(collectionId, name, parentFolderId);
+        if (error) {
+          setCloudError(`Failed to create folder: ${error.message}`);
+          return;
+        }
+        await refreshCollections();
+      },
+    });
+  };
+
+  const handleOpenRenameFolder = (folder: CollectionFolder) => {
+    setFolderModalState({
+      isOpen: true,
+      title: 'Rename Folder',
+      initialName: folder.name,
+      parentFolderName: null,
+      onSave: async (newName: string) => {
+        setCloudError(null);
+        const { error } = await collectionService.renameFolder(folder.id, newName);
+        if (error) {
+          setCloudError(`Failed to rename folder: ${error.message}`);
+          return;
+        }
+        await refreshCollections();
+      },
+    });
+  };
+
+  const handleDeleteFolderPrompt = (folder: CollectionFolder, collection: Collection) => {
+    const subReqs = getAllRequestsFromFolders([folder]);
+    const reqCount = subReqs.length;
+
+    const countSubfolders = (f: CollectionFolder): number => {
+      let count = (f.subfolders || []).length;
+      for (const sub of f.subfolders || []) {
+        count += countSubfolders(sub);
+      }
+      return count;
+    };
+    const subfolderCount = countSubfolders(folder);
+
+    let details = '';
+    if (subfolderCount > 0 || reqCount > 0) {
+      details = ` This will permanently delete this folder, ${subfolderCount} subfolder${subfolderCount !== 1 ? 's' : ''}, and all ${reqCount} saved request${reqCount !== 1 ? 's' : ''} contained within it.`;
+    }
+
+    const message = `Are you sure you want to delete folder "${folder.name}" in collection "${collection.name}"?${details}`;
+
+    setConfirmModalState({
+      isOpen: true,
+      title: 'Delete Folder',
+      message,
+      onConfirm: async () => {
+        setCloudError(null);
+        const { error } = await collectionService.deleteFolder(folder.id);
+        if (error) {
+          setCloudError(`Failed to delete folder: ${error.message}`);
+          return;
+        }
+
+        if (activeSavedRequestId && subReqs.some((r) => r.id === activeSavedRequestId)) {
+          setActiveSavedRequestId(null);
+        }
+
+        await refreshCollections();
+      },
+    });
+  };
+
+  const handleOpenMoveRequest = (savedReq: SavedRequest) => {
+    setMoveItemModalState({
+      isOpen: true,
+      target: { type: 'request', request: savedReq },
+    });
+  };
+
+  const handleOpenMoveFolder = (folder: CollectionFolder, collection: Collection) => {
+    setMoveItemModalState({
+      isOpen: true,
+      target: { type: 'folder', folder, collection },
+    });
+  };
+
+  const handleMoveRequest = async (
+    requestId: string,
+    targetCollectionId: string,
+    targetFolderId: string | null
+  ) => {
+    setCloudError(null);
+    const { error } = await collectionService.moveSavedRequest(requestId, targetCollectionId, targetFolderId);
+    if (error) {
+      setCloudError(`Failed to move request: ${error.message}`);
+      return;
+    }
+    await refreshCollections();
+  };
+
+  const handleMoveFolder = async (folderId: string, targetParentFolderId: string | null) => {
+    setCloudError(null);
+    const parentCol = collections.find((c) => {
+      const exists = (folders: CollectionFolder[]): boolean => {
+        for (const f of folders) {
+          if (f.id === folderId) return true;
+          if (f.subfolders && exists(f.subfolders)) return true;
+        }
+        return false;
+      };
+      return exists(c.folders || []);
+    });
+
+    const { error } = await collectionService.moveFolder(
+      folderId,
+      targetParentFolderId,
+      parentCol ? parentCol.folders : []
+    );
+    if (error) {
+      setCloudError(`Failed to move folder: ${error.message}`);
+      return;
+    }
+    await refreshCollections();
+  };
+
+  // Reordering Handlers (Move Up / Move Down)
+  const handleReorderCollections = async (direction: 'up' | 'down', collectionId: string) => {
+    const currentIndex = collections.findIndex((c) => c.id === collectionId);
+    if (currentIndex === -1) return;
+    const targetIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
+    if (targetIndex < 0 || targetIndex >= collections.length) return;
+
+    const newCollections = [...collections];
+    const [moved] = newCollections.splice(currentIndex, 1);
+    newCollections.splice(targetIndex, 0, moved);
+    setCollections(newCollections);
+
+    const { error } = await collectionService.reorderCollections(newCollections.map((c) => c.id));
+    if (error) {
+      setCloudError(`Failed to reorder collections: ${error.message}`);
+      await refreshCollections();
+    }
+  };
+
+  const handleReorderFolders = async (
+    direction: 'up' | 'down',
+    collectionId: string,
+    parentFolderId: string | null,
+    folderId: string
+  ) => {
+    setCloudError(null);
+    const col = collections.find((c) => c.id === collectionId);
+    if (!col) return;
+
+    let siblings: CollectionFolder[] = [];
+    if (parentFolderId === null) {
+      siblings = [...(col.folders || [])];
+    } else {
+      const parent = collectionService.findFolderInCollection(col.folders || [], parentFolderId);
+      if (!parent || !parent.subfolders) return;
+      siblings = [...parent.subfolders];
+    }
+
+    const currentIndex = siblings.findIndex((f) => f.id === folderId);
+    if (currentIndex === -1) return;
+    const targetIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
+    if (targetIndex < 0 || targetIndex >= siblings.length) return;
+
+    const [moved] = siblings.splice(currentIndex, 1);
+    siblings.splice(targetIndex, 0, moved);
+
+    const { error } = await collectionService.reorderFolders(siblings.map((f) => f.id));
+    if (error) {
+      setCloudError(`Failed to reorder folders: ${error.message}`);
+      return;
+    }
+    await refreshCollections();
+  };
+
+  const handleReorderRequests = async (
+    direction: 'up' | 'down',
+    collectionId: string,
+    folderId: string | null,
+    requestId: string
+  ) => {
+    setCloudError(null);
+    const col = collections.find((c) => c.id === collectionId);
+    if (!col) return;
+
+    let siblings: SavedRequest[] = [];
+    if (folderId === null) {
+      siblings = [...(col.requests || [])];
+    } else {
+      const folder = collectionService.findFolderInCollection(col.folders || [], folderId);
+      if (!folder || !folder.requests) return;
+      siblings = [...folder.requests];
+    }
+
+    const currentIndex = siblings.findIndex((r) => r.id === requestId);
+    if (currentIndex === -1) return;
+    const targetIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
+    if (targetIndex < 0 || targetIndex >= siblings.length) return;
+
+    const [moved] = siblings.splice(currentIndex, 1);
+    siblings.splice(targetIndex, 0, moved);
+
+    const { error } = await collectionService.reorderRequests(siblings.map((r) => r.id));
+    if (error) {
+      setCloudError(`Failed to reorder requests: ${error.message}`);
+      return;
+    }
+    await refreshCollections();
   };
 
   // Supabase Saved Request CRUD
@@ -661,12 +1028,17 @@ function AuthenticatedWorkspace({ user, onSignOut }: AuthenticatedWorkspaceProps
     setSelectedHistoryId(null);
   };
 
-  const handleSaveRequestSubmit = async (name: string, targetCollectionId: string) => {
+  const handleSaveRequestSubmit = async (
+    name: string,
+    targetCollectionId: string,
+    targetFolderId: string | null = null
+  ) => {
     setCloudError(null);
     const { data, error } = await collectionService.createSavedRequest(
       targetCollectionId,
       name,
-      cloneRequest(request)
+      cloneRequest(request),
+      targetFolderId
     );
 
     if (error || !data) {
@@ -674,19 +1046,7 @@ function AuthenticatedWorkspace({ user, onSignOut }: AuthenticatedWorkspaceProps
       return;
     }
 
-    setCollections((prev) =>
-      prev.map((c) => {
-        if (c.id === targetCollectionId) {
-          return {
-            ...c,
-            updatedAt: Date.now(),
-            requests: [...c.requests, data],
-          };
-        }
-        return c;
-      })
-    );
-
+    await refreshCollections();
     setActiveSavedRequestId(data.id);
   };
 
@@ -707,21 +1067,11 @@ function AuthenticatedWorkspace({ user, onSignOut }: AuthenticatedWorkspaceProps
       return;
     }
 
-    setCollections((prev) =>
-      prev.map((c) => {
-        const hasReq = c.requests.some((r) => r.id === activeSavedRequestId);
-        if (!hasReq) return c;
-        return {
-          ...c,
-          updatedAt: Date.now(),
-          requests: c.requests.map((r) => (r.id === activeSavedRequestId ? data : r)),
-        };
-      })
-    );
+    await refreshCollections();
   };
 
   const handleDeleteSavedRequest = async (
-    collectionId: string,
+    _collectionId: string,
     requestId: string,
     e: React.MouseEvent
   ) => {
@@ -734,22 +1084,11 @@ function AuthenticatedWorkspace({ user, onSignOut }: AuthenticatedWorkspaceProps
       return;
     }
 
-    setCollections((prev) =>
-      prev.map((c) => {
-        if (c.id === collectionId) {
-          return {
-            ...c,
-            updatedAt: Date.now(),
-            requests: c.requests.filter((r) => r.id !== requestId),
-          };
-        }
-        return c;
-      })
-    );
-
     if (activeSavedRequestId === requestId) {
       setActiveSavedRequestId(null);
     }
+
+    await refreshCollections();
   };
 
   return (
@@ -761,12 +1100,24 @@ function AuthenticatedWorkspace({ user, onSignOut }: AuthenticatedWorkspaceProps
       onOpenCreateCollection={handleOpenCreateCollectionModal}
       onOpenRenameCollection={handleOpenRenameCollectionModal}
       onDeleteCollectionPrompt={handleDeleteCollectionPrompt}
+      onOpenCreateFolder={handleOpenCreateFolder}
+      onOpenRenameFolder={handleOpenRenameFolder}
+      onDeleteFolderPrompt={handleDeleteFolderPrompt}
+      onOpenMoveRequest={handleOpenMoveRequest}
+      onOpenMoveFolder={handleOpenMoveFolder}
       onDeleteSavedRequest={handleDeleteSavedRequest}
+      onReorderCollections={handleReorderCollections}
+      onReorderFolders={handleReorderFolders}
+      onReorderRequests={handleReorderRequests}
       onNewRequest={handleNewRequest}
       history={history}
       selectedHistoryId={selectedHistoryId}
+      selectedHistoryIds={selectedHistoryIds}
       onSelectHistory={handleSelectHistory}
-      onClearHistory={handleClearHistory}
+      onToggleSelectHistory={handleToggleSelectHistory}
+      onToggleSelectAllHistory={handleToggleSelectAllHistory}
+      onDeleteSelectedHistory={handleDeleteSelectedHistoryPrompt}
+      onClearHistory={handleClearHistoryPrompt}
       onDeleteHistoryItem={handleDeleteHistoryItem}
       environments={environments}
       activeEnvironmentId={activeEnvironmentId}
@@ -792,13 +1143,31 @@ function AuthenticatedWorkspace({ user, onSignOut }: AuthenticatedWorkspaceProps
           <div className="flex items-center space-x-2">
             <span className="text-[10px] text-indigo-350 font-mono flex items-center space-x-1.5">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-              <span>Cloud Sync: Collections, Environments & History Active</span>
+              <span>Cloud Sync: Collections, Folders & Environments Active</span>
             </span>
           </div>
         </div>
 
+        {/* Database Migration Required Error Alert */}
+        {isMigrationRequired && (
+          <div className="bg-rose-950/70 border border-rose-600 rounded-lg p-4 text-rose-200 text-xs flex flex-col space-y-2 animate-fade-in shadow-lg">
+            <div className="flex items-center space-x-2 font-bold text-rose-100 text-sm">
+              <svg className="w-5 h-5 text-rose-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+              <span>Database Schema Migration Required</span>
+            </div>
+            <p className="text-slate-300 leading-relaxed">
+              Your Supabase database requires the Milestone 8 schema update for nested folders and persistent ordering (<code className="bg-rose-900/60 px-1.5 py-0.5 rounded font-mono text-rose-200">collection_folders</code> table and <code className="bg-rose-900/60 px-1.5 py-0.5 rounded font-mono text-rose-200">order_index</code> columns).
+            </p>
+            <p className="text-slate-400">
+              Please execute the provided Milestone 8 SQL migration in your Supabase SQL Editor to enable folder hierarchy and ordering.
+            </p>
+          </div>
+        )}
+
         {/* Cloud Error Banner */}
-        {cloudError && (
+        {cloudError && !isMigrationRequired && (
           <div className="bg-rose-950/40 border border-rose-800/60 rounded-lg p-3 text-rose-300 text-xs flex items-center justify-between animate-fade-in">
             <div className="flex items-center space-x-2">
               <svg className="w-4 h-4 text-rose-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -896,6 +1265,7 @@ function AuthenticatedWorkspace({ user, onSignOut }: AuthenticatedWorkspaceProps
         isSaveAs={false}
         initialName={activeSavedRequestName || ''}
         initialCollectionId={activeSavedRequest?.collectionId || ''}
+        initialFolderId={activeSavedRequest?.folderId || null}
         collections={collections}
         onClose={() => setIsSaveModalOpen(false)}
         onSave={handleSaveRequestSubmit}
@@ -908,6 +1278,7 @@ function AuthenticatedWorkspace({ user, onSignOut }: AuthenticatedWorkspaceProps
         isSaveAs={true}
         initialName={activeSavedRequestName ? `${activeSavedRequestName} (Copy)` : ''}
         initialCollectionId={activeSavedRequest?.collectionId || ''}
+        initialFolderId={activeSavedRequest?.folderId || null}
         collections={collections}
         onClose={() => setIsSaveAsModalOpen(false)}
         onSave={handleSaveRequestSubmit}
@@ -923,11 +1294,33 @@ function AuthenticatedWorkspace({ user, onSignOut }: AuthenticatedWorkspaceProps
         onSave={collectionModalState.onSave}
       />
 
-      {/* Deletion Confirmation Modal */}
+      {/* Create / Rename Folder Modal */}
+      <FolderModal
+        isOpen={folderModalState.isOpen}
+        title={folderModalState.title}
+        initialName={folderModalState.initialName}
+        parentFolderName={folderModalState.parentFolderName}
+        onClose={() => setFolderModalState((prev) => ({ ...prev, isOpen: false }))}
+        onSave={folderModalState.onSave}
+      />
+
+      {/* Move Item (Request / Folder) Modal */}
+      <MoveItemModal
+        isOpen={moveItemModalState.isOpen}
+        target={moveItemModalState.target}
+        collections={collections}
+        onClose={() => setMoveItemModalState({ isOpen: false, target: null })}
+        onMoveRequest={handleMoveRequest}
+        onMoveFolder={handleMoveFolder}
+      />
+
+      {/* Deletion / Action Confirmation Modal */}
       <ConfirmModal
         isOpen={confirmModalState.isOpen}
         title={confirmModalState.title}
         message={confirmModalState.message}
+        confirmLabel={confirmModalState.confirmLabel || 'Delete'}
+        isDestructive={confirmModalState.isDestructive !== false}
         onConfirm={confirmModalState.onConfirm}
         onClose={() => setConfirmModalState((prev) => ({ ...prev, isOpen: false }))}
       />
@@ -936,10 +1329,14 @@ function AuthenticatedWorkspace({ user, onSignOut }: AuthenticatedWorkspaceProps
 }
 
 function AppContent() {
-  const { user, loading, signOut } = useAuth();
+  const { user, loading, isPasswordRecovery, signOut } = useAuth();
 
   if (loading) {
     return <LoadingScreen />;
+  }
+
+  if (isPasswordRecovery) {
+    return <ResetPasswordScreen />;
   }
 
   if (!user) {

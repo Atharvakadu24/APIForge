@@ -1,12 +1,20 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import type { User, Session, AuthError } from '@supabase/supabase-js';
-import { supabase } from '../lib/supabase';
+import { supabase, getAuthRedirectUrl } from '../lib/supabase';
 import { AuthContext } from './authContextDef';
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
+  const [isPasswordRecovery, setIsPasswordRecovery] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      const hash = window.location.hash;
+      const search = window.location.search;
+      return hash.includes('type=recovery') || search.includes('type=recovery');
+    }
+    return false;
+  });
 
   useEffect(() => {
     let isMounted = true;
@@ -36,11 +44,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // 2. Supabase auth state change listener with subscription cleanup
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, currentSession) => {
+    } = supabase.auth.onAuthStateChange((event, currentSession) => {
       if (isMounted) {
         setSession(currentSession);
         setUser(currentSession?.user ?? null);
         setLoading(false);
+
+        if (event === 'PASSWORD_RECOVERY') {
+          setIsPasswordRecovery(true);
+        } else if (event === 'SIGNED_OUT') {
+          setIsPasswordRecovery(false);
+        }
       }
     });
 
@@ -74,6 +88,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const { data, error } = await supabase.auth.signUp({
         email: email.trim(),
         password,
+        options: {
+          emailRedirectTo: getAuthRedirectUrl(),
+        },
       });
 
       if (!error && data.session) {
@@ -96,12 +113,46 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const resetPasswordForEmail = async (email: string) => {
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+        redirectTo: getAuthRedirectUrl(),
+      });
+      return { error };
+    } catch (err: unknown) {
+      const authErr = err as AuthError;
+      return { error: authErr };
+    }
+  };
+
+  const updatePassword = async (newPassword: string) => {
+    try {
+      const { error } = await supabase.auth.updateUser({
+        password: newPassword,
+      });
+
+      if (!error) {
+        setIsPasswordRecovery(false);
+        // Clear any URL hash containing recovery tokens
+        if (typeof window !== 'undefined' && window.history) {
+          window.history.replaceState(null, '', window.location.pathname);
+        }
+      }
+
+      return { error };
+    } catch (err: unknown) {
+      const authErr = err as AuthError;
+      return { error: authErr };
+    }
+  };
+
   const signOut = async () => {
     try {
       const { error } = await supabase.auth.signOut();
       if (!error) {
         setSession(null);
         setUser(null);
+        setIsPasswordRecovery(false);
       }
       return { error };
     } catch (err: unknown) {
@@ -110,16 +161,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const clearPasswordRecovery = () => {
+    setIsPasswordRecovery(false);
+    if (typeof window !== 'undefined' && window.history) {
+      window.history.replaceState(null, '', window.location.pathname);
+    }
+  };
+
   const value = useMemo(
     () => ({
       user,
       session,
       loading,
+      isPasswordRecovery,
       signInWithPassword,
       signUpWithPassword,
+      resetPasswordForEmail,
+      updatePassword,
       signOut,
+      clearPasswordRecovery,
     }),
-    [user, session, loading]
+    [user, session, loading, isPasswordRecovery]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

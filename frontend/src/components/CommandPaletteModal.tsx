@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import type { Collection, SavedRequest } from '../types/collection';
+import type { Collection, CollectionFolder, SavedRequest } from '../types/collection';
 import type { Environment } from '../types/environment';
 import type { HistoryItem } from '../types/history';
 
-export type PaletteItemType = 'request' | 'collection' | 'environment' | 'history';
+export type PaletteItemType = 'request' | 'folder' | 'collection' | 'environment' | 'history';
 
 export interface RequestPaletteItem {
   type: 'request';
@@ -13,8 +13,20 @@ export interface RequestPaletteItem {
   method: string;
   url: string;
   collectionName: string;
+  breadcrumb: string;
   matchText: string;
   data: SavedRequest;
+}
+
+export interface FolderPaletteItem {
+  type: 'folder';
+  id: string;
+  title: string;
+  subtitle: string;
+  breadcrumb: string;
+  requestCount: number;
+  matchText: string;
+  data: { folder: CollectionFolder; collection: Collection };
 }
 
 export interface CollectionPaletteItem {
@@ -53,6 +65,7 @@ export interface HistoryPaletteItem {
 
 export type PaletteItem =
   | RequestPaletteItem
+  | FolderPaletteItem
   | CollectionPaletteItem
   | EnvironmentPaletteItem
   | HistoryPaletteItem;
@@ -68,6 +81,7 @@ interface CommandPaletteModalProps {
   onSelectHistory: (item: HistoryItem) => void;
   onSelectEnvironment: (id: string | null) => void;
   onSelectCollection?: (collection: Collection) => void;
+  onSelectFolder?: (folder: CollectionFolder, collection: Collection) => void;
 }
 
 const getMethodBadgeColor = (method: string) => {
@@ -100,6 +114,76 @@ const getStatusBadgeColor = (status: number) => {
   return 'text-rose-400 bg-rose-950/40';
 };
 
+function countTotalRequestsInFolder(folder: CollectionFolder): number {
+  let count = folder.requests?.length || 0;
+  if (folder.subfolders) {
+    for (const sub of folder.subfolders) {
+      count += countTotalRequestsInFolder(sub);
+    }
+  }
+  return count;
+}
+
+function countTotalRequestsInCollection(col: Collection): number {
+  let count = col.requests?.length || 0;
+  if (col.folders) {
+    for (const f of col.folders) {
+      count += countTotalRequestsInFolder(f);
+    }
+  }
+  return count;
+}
+
+function extractFolderAndRequestItems(
+  folders: CollectionFolder[],
+  col: Collection,
+  parentBreadcrumb: string
+): { folderItems: FolderPaletteItem[]; requestItems: RequestPaletteItem[] } {
+  const folderItems: FolderPaletteItem[] = [];
+  const requestItems: RequestPaletteItem[] = [];
+
+  for (const f of folders) {
+    const currentBreadcrumb = `${parentBreadcrumb} > ${f.name}`;
+    const totalCount = countTotalRequestsInFolder(f);
+
+    folderItems.push({
+      type: 'folder',
+      id: `folder-${f.id}`,
+      title: f.name,
+      subtitle: `${currentBreadcrumb} · ${totalCount} request${totalCount === 1 ? '' : 's'}`,
+      breadcrumb: currentBreadcrumb,
+      requestCount: totalCount,
+      matchText: `${f.name} folder ${currentBreadcrumb}`,
+      data: { folder: f, collection: col },
+    });
+
+    if (f.requests) {
+      for (const req of f.requests) {
+        requestItems.push({
+          type: 'request',
+          id: `req-${req.id}`,
+          title: req.name,
+          subtitle: `${currentBreadcrumb} · ${req.request.url || 'No URL'}`,
+          method: req.request.method,
+          url: req.request.url,
+          collectionName: col.name,
+          breadcrumb: currentBreadcrumb,
+          matchText: `${req.name} ${req.request.method} ${req.request.url} ${currentBreadcrumb}`,
+          data: req,
+        });
+      }
+    }
+
+    if (f.subfolders && f.subfolders.length > 0) {
+      const nested = extractFolderAndRequestItems(f.subfolders, col, currentBreadcrumb);
+      folderItems.push(...nested.folderItems);
+      requestItems.push(...nested.requestItems);
+    }
+  }
+
+  return { folderItems, requestItems };
+}
+
 function CommandPaletteModalContent({
   onClose,
   collections,
@@ -110,6 +194,7 @@ function CommandPaletteModalContent({
   onSelectHistory,
   onSelectEnvironment,
   onSelectCollection,
+  onSelectFolder,
 }: Omit<CommandPaletteModalProps, 'isOpen'>) {
   const [query, setQuery] = useState('');
   const [rawSelectedIndex, setRawSelectedIndex] = useState(0);
@@ -123,29 +208,48 @@ function CommandPaletteModalContent({
 
   // Index and prepare all searchable items from memory
   const allItems = useMemo(() => {
-    const requestItems: RequestPaletteItem[] = collections.flatMap((col) =>
-      col.requests.map((req) => ({
-        type: 'request',
-        id: `req-${req.id}`,
-        title: req.name,
-        subtitle: req.request.url || 'No URL configured',
-        method: req.request.method,
-        url: req.request.url,
-        collectionName: col.name,
-        matchText: `${req.name} ${req.request.method} ${req.request.url} ${col.name}`,
-        data: req,
-      }))
-    );
+    const allRequestItems: RequestPaletteItem[] = [];
+    const allFolderItems: FolderPaletteItem[] = [];
 
-    const collectionItems: CollectionPaletteItem[] = collections.map((col) => ({
-      type: 'collection',
-      id: `col-${col.id}`,
-      title: col.name,
-      subtitle: `${col.requests.length} request${col.requests.length === 1 ? '' : 's'}`,
-      requestCount: col.requests.length,
-      matchText: `${col.name} collection ${col.requests.map((r) => r.name).join(' ')}`,
-      data: col,
-    }));
+    for (const col of collections) {
+      // 1. Root requests in collection
+      if (col.requests) {
+        for (const req of col.requests) {
+          allRequestItems.push({
+            type: 'request',
+            id: `req-${req.id}`,
+            title: req.name,
+            subtitle: `${col.name} · ${req.request.url || 'No URL'}`,
+            method: req.request.method,
+            url: req.request.url,
+            collectionName: col.name,
+            breadcrumb: col.name,
+            matchText: `${req.name} ${req.request.method} ${req.request.url} ${col.name}`,
+            data: req,
+          });
+        }
+      }
+
+      // 2. Folders and nested requests
+      if (col.folders && col.folders.length > 0) {
+        const extracted = extractFolderAndRequestItems(col.folders, col, col.name);
+        allFolderItems.push(...extracted.folderItems);
+        allRequestItems.push(...extracted.requestItems);
+      }
+    }
+
+    const collectionItems: CollectionPaletteItem[] = collections.map((col) => {
+      const totalCount = countTotalRequestsInCollection(col);
+      return {
+        type: 'collection',
+        id: `col-${col.id}`,
+        title: col.name,
+        subtitle: `${totalCount} request${totalCount === 1 ? '' : 's'} · ${col.folders.length} folder${col.folders.length === 1 ? '' : 's'}`,
+        requestCount: totalCount,
+        matchText: `${col.name} collection ${col.requests.map((r) => r.name).join(' ')}`,
+        data: col,
+      };
+    });
 
     const environmentItems: EnvironmentPaletteItem[] = environments.map((env) => ({
       type: 'environment',
@@ -174,7 +278,8 @@ function CommandPaletteModalContent({
     }));
 
     return {
-      requests: requestItems,
+      requests: allRequestItems,
+      folders: allFolderItems,
       collections: collectionItems,
       environments: environmentItems,
       history: historyItems,
@@ -187,6 +292,7 @@ function CommandPaletteModalContent({
     if (!trimmed) {
       return [
         { key: 'requests', label: 'Saved Requests', items: allItems.requests },
+        { key: 'folders', label: 'Folders', items: allItems.folders },
         { key: 'collections', label: 'Collections', items: allItems.collections },
         { key: 'environments', label: 'Environments', items: allItems.environments },
         { key: 'history', label: 'Request History', items: allItems.history },
@@ -200,12 +306,14 @@ function CommandPaletteModalContent({
     };
 
     const matchingRequests = allItems.requests.filter((item) => matchesTerms(item.matchText));
+    const matchingFolders = allItems.folders.filter((item) => matchesTerms(item.matchText));
     const matchingCollections = allItems.collections.filter((item) => matchesTerms(item.matchText));
     const matchingEnvironments = allItems.environments.filter((item) => matchesTerms(item.matchText));
     const matchingHistory = allItems.history.filter((item) => matchesTerms(item.matchText));
 
     return [
       { key: 'requests', label: 'Saved Requests', items: matchingRequests },
+      { key: 'folders', label: 'Folders', items: matchingFolders },
       { key: 'collections', label: 'Collections', items: matchingCollections },
       { key: 'environments', label: 'Environments', items: matchingEnvironments },
       { key: 'history', label: 'Request History', items: matchingHistory },
@@ -236,6 +344,8 @@ function CommandPaletteModalContent({
 
     if (item.type === 'request') {
       onSelectSavedRequest(item.data);
+    } else if (item.type === 'folder') {
+      onSelectFolder?.(item.data.folder, item.data.collection);
     } else if (item.type === 'history') {
       onSelectHistory(item.data);
     } else if (item.type === 'environment') {
@@ -374,10 +484,18 @@ function CommandPaletteModalContent({
                             </span>
                           )}
 
+                          {item.type === 'folder' && (
+                            <div className="w-5 h-5 rounded bg-amber-950/60 text-amber-400 border border-amber-800/40 flex items-center justify-center shrink-0">
+                              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                              </svg>
+                            </div>
+                          )}
+
                           {item.type === 'collection' && (
                             <div className="w-5 h-5 rounded bg-indigo-950/60 text-indigo-400 border border-indigo-800/40 flex items-center justify-center shrink-0">
                               <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
                               </svg>
                             </div>
                           )}

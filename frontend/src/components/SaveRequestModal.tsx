@@ -1,33 +1,87 @@
 import React, { useState, useEffect, useRef } from 'react';
-import type { Collection } from '../types/collection';
+import type { Collection, CollectionFolder } from '../types/collection';
 
 interface SaveRequestModalProps {
   isOpen: boolean;
   isSaveAs?: boolean;
   initialName?: string;
   initialCollectionId?: string;
+  initialFolderId?: string | null;
   collections: Collection[];
   onClose: () => void;
-  onSave: (name: string, collectionId: string) => void;
+  onSave: (name: string, collectionId: string, folderId: string | null) => void;
   onCreateCollection: (name: string) => Promise<string> | string;
+}
+
+interface DestinationOption {
+  key: string;
+  collectionId: string;
+  folderId: string | null;
+  label: string;
+}
+
+function flattenFolders(
+  folders: CollectionFolder[],
+  collectionId: string,
+  depth: number = 1
+): DestinationOption[] {
+  const options: DestinationOption[] = [];
+  for (const f of folders) {
+    const indent = '— '.repeat(depth);
+    options.push({
+      key: `${collectionId}::${f.id}`,
+      collectionId,
+      folderId: f.id,
+      label: `${indent}📁 ${f.name}`,
+    });
+    if (f.subfolders && f.subfolders.length > 0) {
+      options.push(...flattenFolders(f.subfolders, collectionId, depth + 1));
+    }
+  }
+  return options;
 }
 
 function SaveRequestModalContent({
   isSaveAs = false,
   initialName = '',
   initialCollectionId = '',
+  initialFolderId = null,
   collections,
   onClose,
   onSave,
   onCreateCollection,
 }: Omit<SaveRequestModalProps, 'isOpen'>) {
   const [name, setName] = useState(initialName || 'Untitled Request');
-  const [collectionId, setCollectionId] = useState(() => {
-    if (initialCollectionId && collections.some((c) => c.id === initialCollectionId)) {
-      return initialCollectionId;
+
+  // Build list of all valid destinations
+  const destinations: DestinationOption[] = [];
+  for (const col of collections) {
+    destinations.push({
+      key: `${col.id}::root`,
+      collectionId: col.id,
+      folderId: null,
+      label: `📦 ${col.name} (Collection Root)`,
+    });
+    destinations.push(...flattenFolders(col.folders, col.id, 1));
+  }
+
+  const initialKey = (() => {
+    if (initialCollectionId) {
+      if (initialFolderId) {
+        const match = destinations.find(
+          (d) => d.collectionId === initialCollectionId && d.folderId === initialFolderId
+        );
+        if (match) return match.key;
+      }
+      const rootMatch = destinations.find(
+        (d) => d.collectionId === initialCollectionId && d.folderId === null
+      );
+      if (rootMatch) return rootMatch.key;
     }
-    return collections.length > 0 ? collections[0].id : '';
-  });
+    return destinations.length > 0 ? destinations[0].key : '';
+  })();
+
+  const [selectedDestinationKey, setSelectedDestinationKey] = useState<string>(initialKey);
   const [isCreatingCollection, setIsCreatingCollection] = useState(collections.length === 0);
   const [newCollectionName, setNewCollectionName] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -43,16 +97,19 @@ function SaveRequestModalContent({
 
     setIsSubmitting(true);
     try {
-      let targetCollectionId = collectionId;
-
       if (isCreatingCollection) {
         if (!newCollectionName.trim()) return;
-        targetCollectionId = await onCreateCollection(newCollectionName.trim());
-      }
-
-      if (targetCollectionId) {
-        onSave(name.trim(), targetCollectionId);
-        onClose();
+        const newColId = await onCreateCollection(newCollectionName.trim());
+        if (newColId) {
+          onSave(name.trim(), newColId, null);
+          onClose();
+        }
+      } else {
+        const chosen = destinations.find((d) => d.key === selectedDestinationKey);
+        if (chosen) {
+          onSave(name.trim(), chosen.collectionId, chosen.folderId);
+          onClose();
+        }
       }
     } finally {
       setIsSubmitting(false);
@@ -112,11 +169,11 @@ function SaveRequestModalContent({
             />
           </div>
 
-          {/* Target Collection Selection */}
+          {/* Target Location Selection */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <label className="block text-xs font-semibold text-slate-300">
-                Select Collection
+                Destination Location
               </label>
               {collections.length > 0 && (
                 <button
@@ -140,20 +197,20 @@ function SaveRequestModalContent({
                   required
                 />
                 <p className="text-[10px] text-slate-500">
-                  This will create a new collection in Supabase and save this request inside it.
+                  This will create a new collection in Supabase and save this request at its root.
                 </p>
               </div>
             ) : (
               <div className="relative">
                 <select
-                  value={collectionId}
-                  onChange={(e) => setCollectionId(e.target.value)}
+                  value={selectedDestinationKey}
+                  onChange={(e) => setSelectedDestinationKey(e.target.value)}
                   className="w-full bg-slate-950 border border-slate-800 text-slate-200 rounded-lg px-3 py-2 text-xs font-medium focus:outline-none focus:border-indigo-500 cursor-pointer appearance-none pr-8"
                   required
                 >
-                  {collections.map((col) => (
-                    <option key={col.id} value={col.id}>
-                      {col.name} ({col.requests.length} request{col.requests.length !== 1 ? 's' : ''})
+                  {destinations.map((d) => (
+                    <option key={d.key} value={d.key}>
+                      {d.label}
                     </option>
                   ))}
                 </select>
@@ -194,6 +251,7 @@ export default function SaveRequestModal({
   isSaveAs = false,
   initialName = '',
   initialCollectionId = '',
+  initialFolderId = null,
   collections,
   onClose,
   onSave,
@@ -206,6 +264,7 @@ export default function SaveRequestModal({
       isSaveAs={isSaveAs}
       initialName={initialName}
       initialCollectionId={initialCollectionId}
+      initialFolderId={initialFolderId}
       collections={collections}
       onClose={onClose}
       onSave={onSave}
@@ -213,3 +272,4 @@ export default function SaveRequestModal({
     />
   );
 }
+

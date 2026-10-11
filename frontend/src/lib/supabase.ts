@@ -40,6 +40,16 @@ export function getSupabaseConfigStatus(): SupabaseConfigStatus {
 }
 
 /**
+ * Returns a standardized, environment-aware redirect URL for email verification and password reset flows.
+ */
+export function getAuthRedirectUrl(): string {
+  if (typeof window !== 'undefined' && window.location && window.location.origin) {
+    return `${window.location.origin.replace(/\/+$/, '')}/`;
+  }
+  return 'http://localhost:5173/';
+}
+
+/**
  * Creates and initializes the Supabase client instance.
  * Warns with a detailed message if environment variables are missing.
  */
@@ -61,6 +71,7 @@ function createSupabaseClient(): SupabaseClient {
       auth: {
         persistSession: true,
         autoRefreshToken: true,
+        detectSessionInUrl: true,
       },
     }
   );

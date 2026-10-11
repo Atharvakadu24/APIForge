@@ -178,6 +178,33 @@ export async function deleteHistoryItem(
 }
 
 /**
+ * Deletes multiple history items by ID for the authenticated user.
+ */
+export async function deleteHistoryItems(
+  ids: string[]
+): Promise<{ error: Error | null }> {
+  try {
+    if (!ids || ids.length === 0) return { error: null };
+    const userId = await getAuthenticatedUserId();
+
+    const { error } = await supabase
+      .from('request_history')
+      .delete()
+      .in('id', ids)
+      .eq('user_id', userId);
+
+    if (error) {
+      return { error: new Error(error.message) };
+    }
+
+    return { error: null };
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : 'Failed to delete selected history items';
+    return { error: new Error(msg) };
+  }
+}
+
+/**
  * Clears all history items for the authenticated user.
  */
 export async function clearHistory(): Promise<{ error: Error | null }> {
