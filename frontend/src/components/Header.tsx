@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import type { User } from '@supabase/supabase-js';
 import type { Environment } from '../types/environment';
+import BrandLogo from './BrandLogo';
 
 interface HeaderProps {
   environments?: Environment[];
@@ -66,14 +67,7 @@ export default function Header({
     <header className="h-12 border-b border-slate-800 bg-slate-900 px-4 flex items-center justify-between select-none shrink-0 z-50">
       {/* Left section: Logo & Workspace */}
       <div className="flex items-center space-x-4">
-        <div className="flex items-center space-x-2">
-          <div className="w-6 h-6 rounded-md bg-gradient-to-tr from-indigo-600 to-purple-600 flex items-center justify-center font-bold text-white text-xs shadow-md shadow-indigo-500/10">
-            AF
-          </div>
-          <span className="font-extrabold text-sm tracking-wider text-slate-100">
-            APIForge
-          </span>
-        </div>
+        <BrandLogo size="sm" />
 
         <div className="h-4 w-px bg-slate-800" />
 

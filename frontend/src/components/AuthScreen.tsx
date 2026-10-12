@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { formatAuthError } from '../utils/authErrors';
+import { BrandIcon } from './BrandLogo';
 
 export type AuthMode = 'signin' | 'signup' | 'forgot_password';
 
@@ -120,9 +121,7 @@ export default function AuthScreen() {
       <div className="max-w-md w-full bg-slate-900/90 border border-slate-800 rounded-2xl shadow-2xl backdrop-blur-md p-6 sm:p-8 z-10 animate-fade-in">
         {/* Brand Header */}
         <div className="flex flex-col items-center text-center mb-6">
-          <div className="w-12 h-12 rounded-xl bg-gradient-to-tr from-indigo-600 via-indigo-500 to-purple-600 flex items-center justify-center font-extrabold text-white text-lg shadow-lg shadow-indigo-500/20 mb-3">
-            AF
-          </div>
+          <BrandIcon sizePx={52} className="mb-3 shadow-xl shadow-sky-500/10" />
           <h1 className="text-xl font-extrabold tracking-tight text-slate-100">
             {mode === 'signin' && 'Welcome to APIForge'}
             {mode === 'signup' && 'Create an Account'}

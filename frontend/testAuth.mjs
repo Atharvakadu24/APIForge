@@ -214,4 +214,31 @@ runTest('User-scoped RLS queries enforce user_id equality', () => {
   assert.equal(queryFilter('collections', rowOther), false);
 });
 
+// ----------------------------------------------------------------------------
+// Scenario 15: Email not confirmed error formatting
+// ----------------------------------------------------------------------------
+runTest('Email not confirmed error produces guidance to check inbox', () => {
+  const unconfirmedErr = { message: 'Email not confirmed', status: 400 };
+  const formatted = formatAuthError(unconfirmedErr);
+  assert.match(formatted, /check your inbox for the confirmation link/i);
+});
+
+// ----------------------------------------------------------------------------
+// Scenario 16: Security email sending rate limit error formatting
+// ----------------------------------------------------------------------------
+runTest('Email sending rate limit produces friendly cooldown advice', () => {
+  const rateLimitErr = { message: 'over_email_send_rate_limit', code: 'over_email_send_rate_limit', status: 429 };
+  const formatted = formatAuthError(rateLimitErr);
+  assert.match(formatted, /security rate limit reached/i);
+});
+
+// ----------------------------------------------------------------------------
+// Scenario 17: Missing configuration detection produces actionable guidance
+// ----------------------------------------------------------------------------
+runTest('Missing Supabase configuration triggers clear actionable guidance', () => {
+  const configErr = { message: 'Invalid API key or VITE_SUPABASE_URL placeholder' };
+  const formatted = formatAuthError(configErr);
+  assert.match(formatted, /frontend environment variables/i);
+});
+
 console.log(`\n🎉 Results: ${passedTests}/${totalTests} scenarios passed successfully!\n`);

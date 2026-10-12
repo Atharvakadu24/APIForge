@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { formatAuthError } from '../utils/authErrors';
+import { BrandIcon } from './BrandLogo';
 
 export default function ResetPasswordScreen() {
   const { updatePassword, signOut, clearPasswordRecovery } = useAuth();
@@ -70,11 +71,7 @@ export default function ResetPasswordScreen() {
       <div className="max-w-md w-full bg-slate-900/90 border border-slate-800 rounded-2xl shadow-2xl backdrop-blur-md p-6 sm:p-8 z-10 animate-fade-in">
         {/* Header */}
         <div className="flex flex-col items-center text-center mb-6">
-          <div className="w-12 h-12 rounded-xl bg-gradient-to-tr from-indigo-600 via-indigo-500 to-purple-600 flex items-center justify-center font-extrabold text-white text-lg shadow-lg shadow-indigo-500/20 mb-3">
-            <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
-            </svg>
-          </div>
+          <BrandIcon sizePx={52} className="mb-3 shadow-xl shadow-sky-500/10" />
           <h1 className="text-xl font-extrabold tracking-tight text-slate-100">
             Set New Password
           </h1>
