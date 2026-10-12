@@ -83,6 +83,7 @@ function AuthenticatedWorkspace({ user, onSignOut }: AuthenticatedWorkspaceProps
   const [response, setResponse] = useState<ResponseData | null>(null);
   const [editorResetSignal, setEditorResetSignal] = useState(0);
   const activeAbortControllerRef = useRef<AbortController | null>(null);
+  const handleSendRef = useRef<() => void>(() => {});
 
   // Clean up any in-flight request when component unmounts
   useEffect(() => {
@@ -166,13 +167,17 @@ function AuthenticatedWorkspace({ user, onSignOut }: AuthenticatedWorkspaceProps
     onConfirm: () => {},
   });
 
-  // Global keyboard shortcuts (Ctrl+K / Cmd+K for Command Palette)
+  // Global keyboard shortcuts (Ctrl+K / Cmd+K for Command Palette, Ctrl+Enter / Cmd+Enter for Send)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && (e.key === 'k' || e.key === 'K')) {
         e.preventDefault();
         e.stopPropagation();
         setIsCommandPaletteOpen((prev) => !prev);
+      } else if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+        e.preventDefault();
+        e.stopPropagation();
+        handleSendRef.current();
       }
     };
 
@@ -519,7 +524,72 @@ function AuthenticatedWorkspace({ user, onSignOut }: AuthenticatedWorkspaceProps
         signal: controller.signal,
       });
 
-      const data: ResponseData = await res.json();
+      // Read response body as text first to safely handle non-JSON or HTML gateway error bodies
+      const rawText = await res.text();
+      let data: ResponseData;
+
+      let parsed: unknown = null;
+      let isJson = false;
+      if (rawText && rawText.trim()) {
+        try {
+          parsed = JSON.parse(rawText);
+          isJson = true;
+        } catch {
+          isJson = false;
+        }
+      }
+
+      if (isJson && parsed && typeof parsed === 'object') {
+        const parsedRecord = parsed as Record<string, unknown>;
+        if (typeof parsedRecord.status === 'number' && typeof parsedRecord.body === 'string') {
+          // Full execution envelope from backend
+          data = parsed as ResponseData;
+        } else {
+          // Standard JSON response (e.g., from middleware such as auth 401 or rate-limiter 429)
+          const status = typeof parsedRecord.statusCode === 'number'
+            ? parsedRecord.statusCode
+            : (res.status || 500);
+          const statusText = res.statusText || (status >= 500 ? 'Internal Server Error' : 'Error');
+          const safeMessage = typeof parsedRecord.message === 'string'
+            ? parsedRecord.message
+            : typeof parsedRecord.error === 'string'
+            ? parsedRecord.error
+            : 'Request execution completed.';
+          const jsonBody = JSON.stringify(parsed, null, 2);
+          data = {
+            status,
+            statusText,
+            headers: { 'content-type': 'application/json' },
+            time: Math.round(performance.now() - startTime),
+            size: new Blob([jsonBody]).size,
+            body: jsonBody,
+            isError: status >= 400,
+            errorMessage: safeMessage,
+          };
+        }
+      } else {
+        // Non-JSON response (e.g., HTML error page from proxy/gateway or unexpected upstream format)
+        const status = res.status || 502;
+        const statusText = res.statusText || 'Bad Gateway';
+        const errorMsg = `Received an unexpected non-JSON response from backend (HTTP ${status}).`;
+        const errPayload = {
+          error: 'Invalid Backend Response',
+          message: errorMsg,
+          suggestion: 'The backend proxy or upstream gateway returned an unexpected response format.',
+        };
+        const errBody = JSON.stringify(errPayload, null, 2);
+        data = {
+          status,
+          statusText,
+          headers: { 'content-type': 'application/json' },
+          time: Math.round(performance.now() - startTime),
+          size: new Blob([errBody]).size,
+          body: errBody,
+          isError: true,
+          errorMessage: errorMsg,
+        };
+      }
+
       setResponse(data);
       recordHistory(request, data, Math.round(performance.now() - startTime));
     } catch (err: unknown) {
@@ -556,6 +626,10 @@ function AuthenticatedWorkspace({ user, onSignOut }: AuthenticatedWorkspaceProps
       setIsSending(false);
     }
   };
+
+  useEffect(() => {
+    handleSendRef.current = handleSend;
+  });
 
   // Environment Handlers (Supabase PostgreSQL)
   const handleSelectEnvironment = (id: string | null) => {

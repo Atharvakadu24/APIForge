@@ -135,13 +135,17 @@ export default function ResponseBodyViewer({
     }
   }, [activeMatchIndex, totalMatches]);
 
-  // 5. Render Pretty JSON lines with syntax styling and functional match tracking
+  // 5. Render Pretty JSON lines with syntax styling and functional match tracking (capped at 1,000 lines to prevent DOM freezing)
+  const MAX_RENDERED_LINES = 1000;
+  const allLines = useMemo(() => (displayText ? displayText.split('\n') : []), [displayText]);
+  const isTruncated = allLines.length > MAX_RENDERED_LINES;
+
   const renderedLines = useMemo(() => {
     if (!displayText) return null;
-    const lines = displayText.split('\n');
+    const linesToRender = isTruncated ? allLines.slice(0, MAX_RENDERED_LINES) : allLines;
     let runningMatchCounter = 0;
 
-    return lines.map((line, lineIdx) => {
+    return linesToRender.map((line, lineIdx) => {
       // If in pretty JSON mode, highlight JSON keys, strings, numbers, booleans, and nulls
       if (isPretty && jsonResult.isJson) {
         const tokens: React.ReactNode[] = [];
@@ -250,7 +254,7 @@ export default function ResponseBodyViewer({
         </div>
       );
     });
-  }, [displayText, isPretty, jsonResult.isJson, searchQuery, activeMatchIndex]);
+  }, [allLines, isTruncated, displayText, isPretty, jsonResult.isJson, searchQuery, activeMatchIndex]);
 
   return (
     <div
@@ -258,6 +262,14 @@ export default function ResponseBodyViewer({
       className="flex-1 bg-slate-950 rounded-lg border border-slate-850 p-2.5 overflow-auto max-h-[350px] select-text"
     >
       <div className="flex flex-col">{renderedLines}</div>
+      {isTruncated && (
+        <div className="mt-3 p-2.5 bg-slate-900/90 border border-amber-800/40 rounded-md text-[11px] font-mono text-amber-300 flex flex-col sm:flex-row sm:items-center justify-between gap-1 select-none">
+          <span>
+            ⚠️ Showing first {MAX_RENDERED_LINES.toLocaleString()} lines of large response ({allLines.length.toLocaleString()} lines total).
+          </span>
+          <span className="text-slate-400 text-[10px]">Use Copy above to access the full response body.</span>
+        </div>
+      )}
     </div>
   );
 }

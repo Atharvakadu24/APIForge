@@ -216,7 +216,7 @@ export function generateFetch(request: ApiRequest): string {
   const optionsEntries: string[] = [`  method: '${method}',`];
 
   if (hasHeaders) {
-    const headerLines = headers.map((h) => `    '${h.key}': '${h.value.replace(/'/g, "\\'")}',`);
+    const headerLines = headers.map((h) => `    ${JSON.stringify(h.key)}: ${JSON.stringify(h.value)},`);
     optionsEntries.push(`  headers: {\n${headerLines.join('\n')}\n  },`);
   }
 
@@ -261,7 +261,7 @@ export function generateFetch(request: ApiRequest): string {
 
   const prepSection = prepLines.length > 0 ? `${prepLines.join('\n')}\n` : '';
 
-  return `${prepSection}const url = '${fullUrl}';
+  return `${prepSection}const url = ${JSON.stringify(fullUrl)};
 const options = {
 ${optionsEntries.join('\n')}
 };
@@ -282,12 +282,12 @@ export function generatePythonRequests(request: ApiRequest): string {
   const { method, url, queryParams, headers, body, bodyType, formUrlEncoded, multipartFormData } =
     normalizeRequest(request);
 
-  const lines: string[] = ['import requests', '', `url = "${url}"`, ''];
+  const lines: string[] = ['import requests', '', `url = ${JSON.stringify(url)}`, ''];
   const requestArgs: string[] = [`"${method}"`, 'url'];
 
   if (queryParams.length > 0) {
     const paramLines = queryParams.map(
-      (p) => `    "${p.key.replace(/"/g, '\\"')}": "${p.value.replace(/"/g, '\\"')}",`
+      (p) => `    ${JSON.stringify(p.key)}: ${JSON.stringify(p.value)},`
     );
     lines.push(`params = {\n${paramLines.join('\n')}\n}`);
     lines.push('');
@@ -296,7 +296,7 @@ export function generatePythonRequests(request: ApiRequest): string {
 
   if (headers.length > 0) {
     const headerLines = headers.map(
-      (h) => `    "${h.key.replace(/"/g, '\\"')}": "${h.value.replace(/"/g, '\\"')}",`
+      (h) => `    ${JSON.stringify(h.key)}: ${JSON.stringify(h.value)},`
     );
     lines.push(`headers = {\n${headerLines.join('\n')}\n}`);
     lines.push('');
@@ -306,7 +306,7 @@ export function generatePythonRequests(request: ApiRequest): string {
   if (bodyType === 'x-www-form-urlencoded') {
     if (formUrlEncoded.length > 0) {
       const fieldLines = formUrlEncoded.map(
-        (f) => `    "${f.key.replace(/"/g, '\\"')}": "${f.value.replace(/"/g, '\\"')}",`
+        (f) => `    ${JSON.stringify(f.key)}: ${JSON.stringify(f.value)},`
       );
       lines.push(`payload = {\n${fieldLines.join('\n')}\n}`);
       lines.push('');
@@ -315,7 +315,7 @@ export function generatePythonRequests(request: ApiRequest): string {
   } else if (bodyType === 'multipart/form-data') {
     if (multipartFormData.length > 0) {
       const fileLines = multipartFormData.map(
-        (f) => `    "${f.key.replace(/"/g, '\\"')}": (None, "${f.value.replace(/"/g, '\\"')}"),`
+        (f) => `    ${JSON.stringify(f.key)}: (None, ${JSON.stringify(f.value)}),`
       );
       lines.push(`files = {\n${fileLines.join('\n')}\n}`);
       lines.push('');
@@ -359,18 +359,18 @@ export function generateAxios(request: ApiRequest): string {
     normalizeRequest(request);
 
   const prepLines: string[] = [];
-  const configLines: string[] = [`  method: '${method}',`, `  url: '${url}',`];
+  const configLines: string[] = [`  method: '${method}',`, `  url: ${JSON.stringify(url)},`];
 
   if (queryParams.length > 0) {
     const paramLines = queryParams.map(
-      (p) => `    '${p.key.replace(/'/g, "\\'")}': '${p.value.replace(/'/g, "\\'")}',`
+      (p) => `    ${JSON.stringify(p.key)}: ${JSON.stringify(p.value)},`
     );
     configLines.push(`  params: {\n${paramLines.join('\n')}\n  },`);
   }
 
   if (headers.length > 0) {
     const headerLines = headers.map(
-      (h) => `    '${h.key.replace(/'/g, "\\'")}': '${h.value.replace(/'/g, "\\'")}',`
+      (h) => `    ${JSON.stringify(h.key)}: ${JSON.stringify(h.value)},`
     );
     configLines.push(`  headers: {\n${headerLines.join('\n')}\n  },`);
   }

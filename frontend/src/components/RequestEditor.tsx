@@ -513,6 +513,7 @@ export default function RequestEditor({
           <button
             type="button"
             onClick={onSend}
+            title="Send request (Ctrl+Enter / Cmd+Enter)"
             className="bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs py-2 px-5 rounded-lg shadow-lg shadow-indigo-650/15 hover:shadow-indigo-500/25 transition duration-200 flex items-center space-x-1.5 cursor-pointer shrink-0"
           >
             <span>Send</span>

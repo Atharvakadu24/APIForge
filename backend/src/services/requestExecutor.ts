@@ -4,6 +4,7 @@ import type { ExecuteRequestPayload, ExecuteResponsePayload } from '../types/exe
 import { SSRFValidator, SSRFSecurityError } from './ssrfValidator';
 
 const MAX_REDIRECTS = 5;
+export const MAX_RESPONSE_SIZE = 10 * 1024 * 1024; // 10MB limit to prevent memory exhaustion
 
 // Dedicated security agents with socket-level DNS lookup validation
 const ssrfLookupHook = SSRFValidator.createSsrfSafeLookup();
@@ -20,7 +21,7 @@ const httpsAgent = new https.Agent({
   maxSockets: 50,
 });
 
-interface InternalHttpResponse {
+export interface InternalHttpResponse {
   status: number;
   statusText: string;
   headers: Record<string, string>;
@@ -30,24 +31,25 @@ interface InternalHttpResponse {
 
 export class RequestExecutorService {
   /**
-   * Dispatches a single HTTP/HTTPS request over a secure agent with optional AbortSignal.
+   * Dispatches a single HTTP/HTTPS request over a secure agent with optional AbortSignal and optional customAgent (for testing).
    */
-  private static executeSingleRequest(
+  public static executeSingleRequest(
     targetUrl: URL,
     method: string,
     headers: Record<string, string>,
     body: string | Buffer | undefined,
     timeoutMs: number,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    customAgent?: http.Agent | https.Agent
   ): Promise<InternalHttpResponse> {
     return new Promise((resolve, reject) => {
       let isSettled = false;
       let activeRes: http.IncomingMessage | null = null;
-      let req: http.ClientRequest;
+      let req: http.ClientRequest | null = null;
 
       const isHttps = targetUrl.protocol === 'https:';
       const requestFn = isHttps ? https.request : http.request;
-      const agent = isHttps ? httpsAgent : httpAgent;
+      const agent = customAgent || (isHttps ? httpsAgent : httpAgent);
 
       const options: https.RequestOptions = {
         protocol: targetUrl.protocol,
@@ -59,6 +61,8 @@ export class RequestExecutorService {
         agent: agent,
       };
 
+      const noop = () => {};
+
       const cleanup = () => {
         clearTimeout(timer);
         if (signal && onAbort) {
@@ -66,33 +70,115 @@ export class RequestExecutorService {
         }
       };
 
+      const onResData = (chunk: any) => {
+        const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+        totalBytes += buf.length;
+        if (totalBytes > MAX_RESPONSE_SIZE) {
+          if (isSettled) return;
+          isSettled = true;
+          const overflowErr = new SSRFSecurityError(
+            `Response size exceeded maximum allowed limit of ${Math.round(MAX_RESPONSE_SIZE / (1024 * 1024))}MB.`,
+            'RESPONSE_TOO_LARGE'
+          );
+          teardown(overflowErr);
+          reject(overflowErr);
+          return;
+        }
+        chunks.push(buf);
+      };
+
+      const onResEnd = () => {
+        if (isSettled) return;
+        isSettled = true;
+        cleanup();
+        if (activeRes) {
+          activeRes.removeListener('data', onResData);
+          activeRes.removeListener('end', onResEnd);
+          activeRes.removeListener('close', onResClose);
+          activeRes.removeListener('error', onResError);
+          activeRes.on('error', noop);
+        }
+        if (req) {
+          req.removeListener('error', onReqError);
+          req.on('error', noop);
+        }
+        const responseBody = Buffer.concat(chunks).toString('utf8');
+        chunks.length = 0;
+        resolve({
+          status: activeRes?.statusCode || 200,
+          statusText: activeRes?.statusMessage || (activeRes?.statusCode && activeRes.statusCode < 400 ? 'OK' : 'Error'),
+          headers: responseHeaders,
+          body: responseBody,
+          location: responseHeaders['location'],
+        });
+      };
+
+      const onResClose = () => {
+        if (isSettled) return;
+        if (activeRes && !activeRes.complete) {
+          isSettled = true;
+          const closeErr = new Error('Connection closed prematurely before response was fully received');
+          (closeErr as any).code = 'ECONNRESET';
+          teardown(closeErr);
+          reject(closeErr);
+        }
+      };
+
+      const onResError = (err: any) => {
+        if (isSettled) return;
+        isSettled = true;
+        teardown(err);
+        reject(err);
+      };
+
+      const onReqError = (err: any) => {
+        if (isSettled) return;
+        isSettled = true;
+        teardown(err);
+        reject(err);
+      };
+
+      const teardown = (err?: Error) => {
+        cleanup();
+        if (activeRes) {
+          activeRes.removeListener('data', onResData);
+          activeRes.removeListener('end', onResEnd);
+          activeRes.removeListener('close', onResClose);
+          activeRes.removeListener('error', onResError);
+          activeRes.pause();
+          activeRes.on('error', noop);
+          if (!activeRes.destroyed) {
+            activeRes.destroy(err);
+          }
+        }
+        if (req) {
+          req.removeListener('error', onReqError);
+          req.on('error', noop);
+          if (!req.destroyed) {
+            req.destroy(err);
+          }
+        }
+      };
+
       const timer = setTimeout(() => {
         if (!isSettled) {
           isSettled = true;
-          cleanup();
           const timeoutErr = new SSRFSecurityError(`Request timed out after ${timeoutMs}ms.`, 'TIMEOUT');
-          if (activeRes) {
-            activeRes.destroy(timeoutErr);
-          }
-          if (req) {
-            req.destroy(timeoutErr);
-          }
+          teardown(timeoutErr);
           reject(timeoutErr);
         }
       }, timeoutMs);
 
+      if (typeof timer.unref === 'function') {
+        timer.unref();
+      }
+
       const onAbort = () => {
         if (!isSettled) {
           isSettled = true;
-          cleanup();
           const abortErr = new Error('Request aborted by client');
           abortErr.name = 'AbortError';
-          if (activeRes) {
-            activeRes.destroy(abortErr);
-          }
-          if (req) {
-            req.destroy(abortErr);
-          }
+          teardown(abortErr);
           reject(abortErr);
         }
       };
@@ -105,54 +191,49 @@ export class RequestExecutorService {
         signal.addEventListener('abort', onAbort);
       }
 
-      req = requestFn(options, (res) => {
-        activeRes = res;
-        const responseHeaders: Record<string, string> = {};
-        for (const [key, val] of Object.entries(res.headers)) {
-          if (Array.isArray(val)) {
-            responseHeaders[key.toLowerCase()] = val.join(', ');
-          } else if (typeof val === 'string') {
-            responseHeaders[key.toLowerCase()] = val;
+      const responseHeaders: Record<string, string> = {};
+      const chunks: Buffer[] = [];
+      let totalBytes = 0;
+
+      try {
+        req = requestFn(options, (res) => {
+          activeRes = res;
+          for (const [key, val] of Object.entries(res.headers)) {
+            if (Array.isArray(val)) {
+              responseHeaders[key.toLowerCase()] = val.join(', ');
+            } else if (typeof val === 'string') {
+              responseHeaders[key.toLowerCase()] = val;
+            }
           }
-        }
 
-        const chunks: Buffer[] = [];
-        res.on('data', (chunk) => chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)));
-
-        res.on('end', () => {
-          if (isSettled) return;
-          isSettled = true;
-          cleanup();
-          const responseBody = Buffer.concat(chunks).toString('utf8');
-          resolve({
-            status: res.statusCode || 200,
-            statusText: res.statusMessage || (res.statusCode && res.statusCode < 400 ? 'OK' : 'Error'),
-            headers: responseHeaders,
-            body: responseBody,
-            location: responseHeaders['location'],
-          });
+          res.on('data', onResData);
+          res.on('end', onResEnd);
+          res.on('close', onResClose);
+          res.on('error', onResError);
         });
-
-        res.on('error', (err) => {
-          if (isSettled) return;
+      } catch (err: any) {
+        if (!isSettled) {
           isSettled = true;
           cleanup();
           reject(err);
-        });
-      });
-
-      req.on('error', (err) => {
-        if (isSettled) return;
-        isSettled = true;
-        cleanup();
-        reject(err);
-      });
-
-      if (body && method !== 'GET' && method !== 'HEAD') {
-        req.write(body);
+        }
+        return;
       }
 
-      req.end();
+      req.on('error', onReqError);
+
+      try {
+        if (body && method !== 'GET' && method !== 'HEAD') {
+          req.write(body);
+        }
+        req.end();
+      } catch (err: any) {
+        if (!isSettled) {
+          isSettled = true;
+          teardown(err);
+          reject(err);
+        }
+      }
     });
   }
 
@@ -358,14 +439,8 @@ export class RequestExecutorService {
             );
           }
 
-          // Cross-Origin header sanitation (strip Authorization / API keys if origin changes)
-          if (nextUrl.origin !== currentUrl.origin) {
-            delete requestHeaders['Authorization'];
-            delete requestHeaders['authorization'];
-            if (payload.auth?.type === 'apiKey' && payload.auth.apiKey?.key) {
-              delete requestHeaders[payload.auth.apiKey.key];
-            }
-          }
+          // Cross-Origin header sanitation (strip Authorization, Cookies, API keys if origin changes)
+          requestHeaders = this.sanitizeRedirectHeaders(requestHeaders, nextUrl, currentUrl, payload.auth);
 
           // Adjust HTTP Method and Body for redirects per RFC semantics
           if (response.status === 303 || ((response.status === 301 || response.status === 302) && currentMethod === 'POST')) {
@@ -407,6 +482,29 @@ export class RequestExecutorService {
       const endTime = performance.now();
       const latency = Math.round(endTime - startTime);
 
+      // Response size exceeded maximum allowed limit
+      if (err.code === 'RESPONSE_TOO_LARGE') {
+        const safeMessage = 'Response size exceeded maximum allowed limit of 10MB.';
+        const errorPayload = {
+          error: 'Payload Too Large',
+          code: 'RESPONSE_TOO_LARGE',
+          message: safeMessage,
+          suggestion: 'The upstream server returned a response that exceeds the maximum allowed 10MB limit.',
+        };
+        const errorBody = JSON.stringify(errorPayload, null, 2);
+
+        return {
+          status: 413,
+          statusText: 'Payload Too Large',
+          headers: { 'content-type': 'application/json' },
+          time: latency,
+          size: Buffer.byteLength(errorBody, 'utf8'),
+          body: errorBody,
+          isError: true,
+          errorMessage: safeMessage,
+        };
+      }
+
       // SSRF Security Blocked (Direct or Redirect)
       if (
         err.code === 'SSRF_BLOCKED' ||
@@ -416,12 +514,17 @@ export class RequestExecutorService {
         err.code === 'INVALID_REDIRECT' ||
         err.code === 'TOO_MANY_REDIRECTS'
       ) {
+        let safeMessage = 'Access to the requested destination is blocked for security.';
+        if (err.code === 'INVALID_URL') safeMessage = 'Invalid URL format.';
+        else if (err.code === 'INVALID_PROTOCOL') safeMessage = 'Unsupported protocol. Only HTTP and HTTPS are permitted.';
+        else if (err.code === 'SSRF_REDIRECT_BLOCKED') safeMessage = 'Redirect target was blocked for security.';
+        else if (err.code === 'INVALID_REDIRECT') safeMessage = 'Invalid redirect location URL.';
+        else if (err.code === 'TOO_MANY_REDIRECTS') safeMessage = 'Maximum redirect limit exceeded.';
+
         const errorPayload = {
           error: err.code === 'SSRF_REDIRECT_BLOCKED' ? 'Blocked Redirect Target' : 'SSRF Security Violation',
           code: err.code,
-          message: err.message || 'Access to the requested destination is blocked for security.',
-          target: err.target || payload.url,
-          blockedAddress: err.blockedAddress,
+          message: safeMessage,
         };
         const errorBody = JSON.stringify(errorPayload, null, 2);
 
@@ -433,7 +536,7 @@ export class RequestExecutorService {
           size: Buffer.byteLength(errorBody, 'utf8'),
           body: errorBody,
           isError: true,
-          errorMessage: errorPayload.message,
+          errorMessage: safeMessage,
         };
       }
 
@@ -463,7 +566,7 @@ export class RequestExecutorService {
         const errorPayload = {
           error: 'Gateway Timeout',
           code: 'TIMEOUT',
-          message: `The target server failed to respond within ${payload.timeoutMs || 30000}ms.`,
+          message: 'The target server failed to respond within the allowed timeout period.',
           suggestion: 'Check if the target server is active and reachable, or increase the timeout duration.',
         };
         const errorBody = JSON.stringify(errorPayload, null, 2);
@@ -485,8 +588,7 @@ export class RequestExecutorService {
         const errorPayload = {
           error: 'DNS Lookup Failed',
           code: 'DNS_LOOKUP_FAILED',
-          message: err.message || 'Could not resolve destination hostname.',
-          target: payload.url,
+          message: 'Could not resolve destination hostname.',
         };
         const errorBody = JSON.stringify(errorPayload, null, 2);
 
@@ -507,8 +609,7 @@ export class RequestExecutorService {
       const errorPayload = {
         error: 'Network Error',
         code: errorCode,
-        message: err.message || 'Failed to connect to the target endpoint.',
-        target: payload.url,
+        message: 'Failed to connect to the target endpoint.',
       };
       const errorBody = JSON.stringify(errorPayload, null, 2);
 
@@ -523,5 +624,36 @@ export class RequestExecutorService {
         errorMessage: errorPayload.message,
       };
     }
+  }
+
+  /**
+   * Sanitizes request headers for cross-origin redirects by removing credentials and API keys case-insensitively.
+   */
+  public static sanitizeRedirectHeaders(
+    requestHeaders: Record<string, string>,
+    nextUrl: URL,
+    currentUrl: URL,
+    auth?: ExecuteRequestPayload['auth']
+  ): Record<string, string> {
+    const sanitized = { ...requestHeaders };
+    if (nextUrl.origin !== currentUrl.origin) {
+      const sensitiveKeys = new Set([
+        'authorization',
+        'cookie',
+        'proxy-authorization',
+        'x-api-key',
+        'api-key',
+        'apikey',
+      ]);
+      if (auth?.type === 'apiKey' && auth.apiKey?.key) {
+        sensitiveKeys.add(auth.apiKey.key.toLowerCase());
+      }
+      for (const headerKey of Object.keys(sanitized)) {
+        if (sensitiveKeys.has(headerKey.toLowerCase())) {
+          delete sanitized[headerKey];
+        }
+      }
+    }
+    return sanitized;
   }
 }

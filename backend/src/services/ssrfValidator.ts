@@ -26,7 +26,11 @@ const BLOCKED_IPV6_RANGES: [string, number][] = [
   ['::', 128],             // Unspecified (RFC 4291)
   ['::1', 128],            // Loopback (RFC 4291)
   ['100::', 64],           // Discard-Only Prefix (RFC 6666)
+  ['2001:2::', 48],        // Benchmarking (RFC 5180)
   ['2001:db8::', 32],      // Documentation (RFC 3849)
+  ['2001:10::', 28],       // ORCHID (RFC 4843)
+  ['2001:20::', 28],       // ORCHIDv2 (RFC 7343)
+  ['2002::', 16],          // 6to4 (Deprecated RFC 3056, RFC 7526)
   ['fc00::', 7],           // Unique Local Address - ULA (RFC 4193)
   ['fe80::', 10],          // Link-Local Unicast (RFC 4291)
   ['fec0::', 10],          // Site-Local Unicast (Deprecated RFC 3879)
@@ -51,7 +55,7 @@ const BLOCKED_TLDS = ['.localhost', '.local', '.internal', '.corp', '.lan', '.ho
  */
 function ipv4ToInt(ip: string): number | null {
   const parts = ip.split('.').map(Number);
-  if (parts.length !== 4 || parts.some((p) => isNaN(p) || p < 0 || p > 255)) {
+  if (parts.length !== 4 || parts.some((p) => !Number.isInteger(p) || p < 0 || p > 255)) {
     return null;
   }
   return ((parts[0] << 24) | (parts[1] << 16) | (parts[2] << 8) | parts[3]) >>> 0;
@@ -76,23 +80,37 @@ function ipv6ToBigInt(ip: string): bigint {
     const lastColon = normalized.lastIndexOf(':');
     const ipv4Part = normalized.slice(lastColon + 1);
     const parts = ipv4Part.split('.').map(Number);
-    if (parts.length === 4) {
+    if (parts.length === 4 && parts.every((p) => Number.isInteger(p) && p >= 0 && p <= 255)) {
       const hex1 = ((parts[0] << 8) | parts[1]).toString(16).padStart(4, '0');
       const hex2 = ((parts[2] << 8) | parts[3]).toString(16).padStart(4, '0');
       normalized = normalized.slice(0, lastColon + 1) + hex1 + ':' + hex2;
+    } else {
+      throw new Error('Invalid embedded IPv4 address');
     }
   }
 
   const parts = normalized.split('::');
+  if (parts.length > 2) {
+    throw new Error('Invalid IPv6: multiple ::');
+  }
   const left = parts[0] ? parts[0].split(':').filter(Boolean) : [];
   const right = parts[1] ? parts[1].split(':').filter(Boolean) : [];
 
   const missing = 8 - (left.length + right.length);
+  if (missing < 0) {
+    throw new Error('Invalid IPv6: too many segments');
+  }
   const full = [...left, ...Array(missing).fill('0'), ...right].map((p) => p || '0');
+  if (full.length !== 8) {
+    throw new Error('Invalid IPv6: segment count mismatch');
+  }
 
   let result = 0n;
   for (const part of full) {
-    result = (result << 16n) + BigInt(parseInt(part, 16) || 0);
+    if (!/^[0-9a-fA-F]{1,4}$/.test(part)) {
+      throw new Error(`Invalid IPv6 hex segment: ${part}`);
+    }
+    result = (result << 16n) + BigInt(parseInt(part, 16));
   }
   return result;
 }
@@ -125,44 +143,72 @@ export class SSRFValidator {
    * Checks if an IP address (v4 or v6) is private, loopback, link-local, or restricted.
    */
   public static isBlockedIp(ip: string): boolean {
-    if (!ip) return true;
+    if (!ip || typeof ip !== 'string') return true;
+    const cleanIp = ip.trim().replace(/^\[|\]$/g, '');
+    if (!cleanIp) return true;
 
     // IPv4 Check
-    if (net.isIPv4(ip)) {
-      const ipInt = ipv4ToInt(ip);
+    if (net.isIPv4(cleanIp)) {
+      const ipInt = ipv4ToInt(cleanIp);
       if (ipInt === null) return true;
       return BLOCKED_IPV4_RANGES.some(([cidr, len]) => isIpv4InCidr(ipInt, cidr, len));
     }
 
     // IPv6 Check
-    if (net.isIPv6(ip)) {
-      // Check IPv4-Mapped IPv6 (e.g. ::ffff:127.0.0.1)
-      if (ip.toLowerCase().startsWith('::ffff:')) {
-        const lastColon = ip.lastIndexOf(':');
-        const ipv4Part = ip.slice(lastColon + 1);
-        if (net.isIPv4(ipv4Part)) {
-          return this.isBlockedIp(ipv4Part);
-        }
-      }
-
+    if (net.isIPv6(cleanIp)) {
       try {
-        const ipBigInt = ipv6ToBigInt(ip);
+        const ipBigInt = ipv6ToBigInt(cleanIp);
 
-        // Check standard IPv6 blocked ranges
+        // 1. Check standard IPv6 blocked ranges
         const isStandardBlocked = BLOCKED_IPV6_RANGES.some(([cidr, len]) => isIpv6InCidr(ipBigInt, cidr, len));
         if (isStandardBlocked) return true;
 
-        // Check NAT64 Prefix (64:ff9b::/96) - extract embedded IPv4 in bottom 32 bits and evaluate
+        const extractIpv4String = (ipv4Int: number): string => {
+          const octet1 = (ipv4Int >>> 24) & 255;
+          const octet2 = (ipv4Int >>> 16) & 255;
+          const octet3 = (ipv4Int >>> 8) & 255;
+          const octet4 = ipv4Int & 255;
+          return `${octet1}.${octet2}.${octet3}.${octet4}`;
+        };
+
+        // 2. Check IPv4-Mapped IPv6 (::ffff:0:0/96) - covers both expanded (0:0:0:0:0:ffff:...) and compressed (::ffff:...)
+        // Top 80 bits are 0, bits 32-47 are 0xffff, bottom 32 bits are IPv4
+        const ipv4MappedMask = ((~0n << 32n) & ((1n << 128n) - 1n));
+        const ipv4MappedPrefix = 0xffffn << 32n;
+        if ((ipBigInt & ipv4MappedMask) === ipv4MappedPrefix) {
+          const embeddedIpv4Int = Number(ipBigInt & 0xffffffffn);
+          return this.isBlockedIp(extractIpv4String(embeddedIpv4Int));
+        }
+
+        // 3. Check IPv4-Compatible IPv6 (::/96) - deprecated RFC 4291
+        // Top 96 bits are 0, bottom 32 bits are IPv4
+        const ipv4CompatibleMask = ((~0n << 32n) & ((1n << 128n) - 1n));
+        if ((ipBigInt & ipv4CompatibleMask) === 0n) {
+          if (ipBigInt === 0n || ipBigInt === 1n) {
+            return true; // :: (unspecified) or ::1 (loopback)
+          }
+          const embeddedIpv4Int = Number(ipBigInt & 0xffffffffn);
+          return this.isBlockedIp(extractIpv4String(embeddedIpv4Int));
+        }
+
+        // 4. Check 6to4 (2002::/16, RFC 3056) - Deprecated by RFC 7526; blocked entirely to prevent tunneling/relay abuse
+        if ((ipBigInt >> 112n) === 0x2002n) {
+          return true;
+        }
+
+        // 5. Check NAT64 Prefix (64:ff9b::/96) - bottom 32 bits are embedded IPv4
         const nat64Prefix = ipv6ToBigInt('64:ff9b::');
         const nat64Mask = ((~0n << 32n) & ((1n << 128n) - 1n));
         if ((ipBigInt & nat64Mask) === (nat64Prefix & nat64Mask)) {
           const embeddedIpv4Int = Number(ipBigInt & 0xffffffffn);
-          const octet1 = (embeddedIpv4Int >>> 24) & 255;
-          const octet2 = (embeddedIpv4Int >>> 16) & 255;
-          const octet3 = (embeddedIpv4Int >>> 8) & 255;
-          const octet4 = embeddedIpv4Int & 255;
-          const embeddedIpStr = `${octet1}.${octet2}.${octet3}.${octet4}`;
-          return this.isBlockedIp(embeddedIpStr);
+          return this.isBlockedIp(extractIpv4String(embeddedIpv4Int));
+        }
+
+        // 6. Check Local-Use IPv4/IPv6 Translation (64:ff9b:1::/48, RFC 8215)
+        const nat64LocalPrefix = ipv6ToBigInt('64:ff9b:1::');
+        const nat64LocalMask = ((~0n << 80n) & ((1n << 128n) - 1n));
+        if ((ipBigInt & nat64LocalMask) === (nat64LocalPrefix & nat64LocalMask)) {
+          return true;
         }
 
         return false;
@@ -171,7 +217,7 @@ export class SSRFValidator {
       }
     }
 
-    return true; // Not a recognized IP
+    return true; // Not a recognized IP -> reject for defense-in-depth
   }
 
   /**
@@ -180,8 +226,9 @@ export class SSRFValidator {
   public static isBlockedHostname(hostname: string): boolean {
     if (!hostname) return true;
     const lower = hostname.toLowerCase().trim().replace(/\.$/, ''); // Strip trailing dot
+    const cleanHost = lower.replace(/^\[|\]$/g, '');
 
-    if (BLOCKED_HOSTNAMES.has(lower)) {
+    if (BLOCKED_HOSTNAMES.has(lower) || BLOCKED_HOSTNAMES.has(cleanHost)) {
       return true;
     }
 
@@ -189,7 +236,11 @@ export class SSRFValidator {
       return true;
     }
 
-    // Check if hostname is direct IP string
+    // Check if hostname is direct IP string (IPv4 or IPv6, with or without brackets)
+    if (net.isIP(cleanHost)) {
+      return this.isBlockedIp(cleanHost);
+    }
+
     if (net.isIP(lower)) {
       return this.isBlockedIp(lower);
     }
@@ -264,28 +315,29 @@ export class SSRFValidator {
    * Asynchronously validates hostname DNS resolution against private and restricted IP ranges.
    */
   public static async validateDestination(url: URL): Promise<void> {
-    const hostname = url.hostname;
+    const rawHostname = url.hostname;
+    const hostname = rawHostname.replace(/^\[|\]$/g, '');
 
     // If direct numeric IP
     if (net.isIP(hostname)) {
       if (this.isBlockedIp(hostname)) {
         throw new SSRFSecurityError(
-          `Access to restricted IP address "${hostname}" is blocked for security.`,
+          `Access to restricted IP address "${rawHostname}" is blocked for security.`,
           'SSRF_BLOCKED',
           url.toString(),
-          hostname
+          rawHostname
         );
       }
       return;
     }
 
     // Static hostname pattern check
-    if (this.isBlockedHostname(hostname)) {
+    if (this.isBlockedHostname(rawHostname)) {
       throw new SSRFSecurityError(
-        `Access to restricted host "${hostname}" is blocked for security.`,
+        `Access to restricted host "${rawHostname}" is blocked for security.`,
         'SSRF_BLOCKED',
         url.toString(),
-        hostname
+        rawHostname
       );
     }
 
@@ -330,9 +382,11 @@ export class SSRFValidator {
       options: any,
       callback: (err: Error | null, addressOrAddresses?: any, family?: number) => void
     ) => {
+      const cleanHost = (hostname || '').replace(/^\[|\]$/g, '');
+
       // Direct IP check
-      if (net.isIP(hostname)) {
-        if (SSRFValidator.isBlockedIp(hostname)) {
+      if (net.isIP(cleanHost)) {
+        if (SSRFValidator.isBlockedIp(cleanHost)) {
           return callback(
             new SSRFSecurityError(
               `Socket connection to restricted IP "${hostname}" is blocked for security.`,
@@ -343,9 +397,9 @@ export class SSRFValidator {
           );
         }
         if (options && options.all) {
-          return callback(null, [{ address: hostname, family: net.isIPv6(hostname) ? 6 : 4 }]);
+          return callback(null, [{ address: cleanHost, family: net.isIPv6(cleanHost) ? 6 : 4 }]);
         }
-        return callback(null, hostname, net.isIPv6(hostname) ? 6 : 4);
+        return callback(null, cleanHost, net.isIPv6(cleanHost) ? 6 : 4);
       }
 
       // Static hostname check
@@ -361,7 +415,7 @@ export class SSRFValidator {
       }
 
       // Resolve DNS with { all: true }
-      dns.lookup(hostname, { all: true }, (err, addresses) => {
+      dns.lookup(cleanHost, { all: true }, (err, addresses) => {
         if (err) return callback(err);
         if (!addresses || addresses.length === 0) {
           return callback(

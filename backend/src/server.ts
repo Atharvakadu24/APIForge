@@ -2,11 +2,28 @@ import express, { Request, Response } from 'express';
 import cors from 'cors';
 import { config, isSupabaseAuthConfigured } from './config';
 import { executeRouter } from './routes/executeRouter';
+import {
+  securityHeaders,
+  createRateLimiter,
+  globalErrorHandler,
+  notFoundHandler,
+} from './middleware/security';
 
 const app = express();
 const PORT = config.PORT;
 
-// Enable CORS with configurable origins
+// Configure reverse proxy trust for accurate client IP resolution in rate limiting.
+// In Render's single-hop architecture, trusting the first upstream proxy (1) allows Express to extract
+// the client IP from the right-most address appended by Render's proxy, preventing spoofed X-Forwarded-For headers.
+// Configurable via TRUST_PROXY env var (e.g. 1, false, or specific CIDRs).
+if (config.TRUST_PROXY !== false) {
+  app.set('trust proxy', config.TRUST_PROXY);
+}
+
+// Standard security headers
+app.use(securityHeaders);
+
+// Enable CORS with configurable origins (clean rejection without unhandled error)
 app.use(
   cors({
     origin: (origin, callback) => {
@@ -20,7 +37,8 @@ app.use(
       ) {
         return callback(null, true);
       }
-      callback(new Error(`Origin ${origin} is not allowed by CORS`));
+      // Clean rejection: pass false instead of throwing unhandled Error
+      callback(null, false);
     },
     credentials: true,
   })
@@ -41,9 +59,18 @@ app.get('/api/health', (_req: Request, res: Response) => {
   });
 });
 
+// Rate limiting on request execution endpoints (120 requests/minute per client IP)
+const executeRateLimiter = createRateLimiter({ windowMs: 60 * 1000, maxRequests: 120 });
+
 // Mount Request Execution Engine router
-app.use('/api/request', executeRouter);
-app.use('/api', executeRouter); // Allows both /api/request/execute and /api/execute
+app.use('/api/request', executeRateLimiter, executeRouter);
+app.use('/api', executeRateLimiter, executeRouter); // Allows both /api/request/execute and /api/execute
+
+// 404 Handler for unmatched routes
+app.use(notFoundHandler);
+
+// Global Error Handler (prevents stack trace leaks and handles malformed JSON)
+app.use(globalErrorHandler);
 
 // Start the server
 app.listen(PORT, () => {

@@ -65,6 +65,20 @@ export const config = {
     process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
     '',
+  // Trust proxy configuration for deployments behind reverse proxies (e.g. Render, Railway, AWS ALB, Cloudflare).
+  // In Render's single-hop architecture, trusting 1 hop allows Express to resolve the real client IP
+  // from the rightmost X-Forwarded-For entry appended by Render, preventing client IP spoofing.
+  // Defaults to 1 for Render; can be disabled with 'false' or configured to specific hop count or subnets via TRUST_PROXY.
+  TRUST_PROXY:
+    process.env.TRUST_PROXY !== undefined
+      ? process.env.TRUST_PROXY === 'false'
+        ? false
+        : process.env.TRUST_PROXY === 'true'
+          ? true
+          : !isNaN(Number(process.env.TRUST_PROXY))
+            ? Number(process.env.TRUST_PROXY)
+            : process.env.TRUST_PROXY
+      : 1,
 };
 
 /**

@@ -105,9 +105,44 @@ export async function requireAuth(
   try {
     const payloadJson = Buffer.from(segments[1], 'base64url').toString('utf8');
     const payload = JSON.parse(payloadJson);
-    if (payload.exp && typeof payload.exp === 'number') {
+
+    // Validate that the decoded payload is a non-null, non-array JSON object
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+      res.status(401).json({
+        status: 401,
+        statusText: 'Unauthorized',
+        headers: { 'content-type': 'application/json' },
+        time: 0,
+        size: 0,
+        body: JSON.stringify({
+          error: 'Unauthorized',
+          message: 'Malformed JWT payload structure. Expected a JSON object.',
+        }),
+        isError: true,
+        errorMessage: 'Malformed JWT payload structure.',
+      });
+      return;
+    }
+
+    if ('exp' in payload) {
+      if (typeof payload.exp !== 'number' || !Number.isFinite(payload.exp) || payload.exp <= 0) {
+        res.status(401).json({
+          status: 401,
+          statusText: 'Unauthorized',
+          headers: { 'content-type': 'application/json' },
+          time: 0,
+          size: 0,
+          body: JSON.stringify({
+            error: 'Unauthorized',
+            message: 'Supabase authentication token has an invalid or expired expiration claim.',
+          }),
+          isError: true,
+          errorMessage: 'Invalid or expired expiration claim in token.',
+        });
+        return;
+      }
       const nowInSeconds = Math.floor(Date.now() / 1000);
-      if (payload.exp < nowInSeconds) {
+      if (payload.exp <= nowInSeconds) {
         res.status(401).json({
           status: 401,
           statusText: 'Unauthorized',
@@ -176,14 +211,7 @@ export async function requireAuth(
     });
 
     if (!authResponse.ok) {
-      let errorDetail = 'Invalid or expired Supabase token.';
-      try {
-        const errJson = (await authResponse.json()) as any;
-        errorDetail = errJson?.msg || errJson?.message || errJson?.error_description || errorDetail;
-      } catch {
-        // Fall back to default error detail
-      }
-
+      const genericMessage = 'Invalid or expired Supabase authentication token.';
       res.status(401).json({
         status: 401,
         statusText: 'Unauthorized',
@@ -192,10 +220,10 @@ export async function requireAuth(
         size: 0,
         body: JSON.stringify({
           error: 'Unauthorized',
-          message: errorDetail,
+          message: genericMessage,
         }),
         isError: true,
-        errorMessage: errorDetail,
+        errorMessage: genericMessage,
       });
       return;
     }
@@ -223,11 +251,16 @@ export async function requireAuth(
     next();
   } catch (err: any) {
     const isTimeout = err.name === 'TimeoutError' || err.name === 'AbortError';
-    const message = isTimeout
-      ? 'Supabase authentication service timed out while verifying token.'
-      : `Failed to verify token with Supabase auth: ${err.message}`;
 
-    console.error('[APIForge Backend Auth] Verification error:', message);
+    // Log only safe diagnostic metadata; never log tokens or expose internal network errors
+    console.error('[APIForge Backend Auth] Verification failure:', {
+      reason: isTimeout ? 'timeout' : 'upstream_error',
+      errorName: err?.name,
+    });
+
+    const clientMessage = isTimeout
+      ? 'Authentication service timed out while verifying token.'
+      : 'Authentication service is temporarily unavailable. Please try again later.';
 
     res.status(503).json({
       status: 503,
@@ -237,10 +270,10 @@ export async function requireAuth(
       size: 0,
       body: JSON.stringify({
         error: 'Authentication Service Unavailable',
-        message,
+        message: clientMessage,
       }),
       isError: true,
-      errorMessage: message,
+      errorMessage: clientMessage,
     });
   }
 }
