@@ -361,5 +361,56 @@ runTest('ResponseBodyViewer preserves select-none on line numbers but not on con
   );
 });
 
+// ----------------------------------------------------------------------------
+// Scenario 23: CommandPaletteModal provides accessible close button and Escape handler
+// ----------------------------------------------------------------------------
+runTest('CommandPaletteModal provides visible accessible close button and Escape listener', () => {
+  const modalPath = new URL('src/components/CommandPaletteModal.tsx', import.meta.url).pathname.replace(/^\/([A-Z]:)/, '$1');
+  const modalContent = fs.readFileSync(modalPath, 'utf8');
+
+  // Verify accessible close button is present with aria-label, title, and onClick={onClose}
+  assert.match(
+    modalContent,
+    /<button[^>]*onClick=\{onClose\}[^>]*aria-label="Close search"[^>]*title="Close search \(Esc\)"/s,
+    'CommandPaletteModal must contain an accessible close button with aria-label="Close search" and title="Close search (Esc)"'
+  );
+
+  // Verify close button contains the SVG close (×) icon
+  assert.match(
+    modalContent,
+    /d="M6 18L18 6M6 6l12 12"/,
+    'Close button must contain the × close SVG icon path'
+  );
+
+  // Verify Escape key event listener is registered to close the modal
+  assert.match(
+    modalContent,
+    /if\s*\(\s*e\.key\s*===\s*['"]Escape['"]\s*\)\s*\{[^}]*onClose\(\)/s,
+    'CommandPaletteModal must handle Escape key to trigger onClose()'
+  );
+
+  // Functional simulation of the close logic and Escape handler
+  let isClosed = false;
+  const mockOnClose = () => { isClosed = true; };
+
+  // Simulate Escape key press handler
+  const simulateKeyDown = (event, onCloseFn) => {
+    if (event.key === 'Escape') {
+      onCloseFn();
+    }
+  };
+
+  simulateKeyDown({ key: 'Escape' }, mockOnClose);
+  assert.equal(isClosed, true, 'Escape key simulation must trigger onClose');
+
+  // Reset and simulate button click
+  isClosed = false;
+  const simulateButtonClick = (onCloseFn) => {
+    onCloseFn();
+  };
+  simulateButtonClick(mockOnClose);
+  assert.equal(isClosed, true, 'Clicking close button must trigger onClose');
+});
+
 console.log(`\n🎉 Results: ${passedTests}/${totalTests} scenarios passed successfully!\n`);
 

@@ -206,6 +206,18 @@ function CommandPaletteModalContent({
     inputRef.current?.focus();
   }, []);
 
+  // Handle global Escape key to close modal reliably from anywhere
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+  }, [onClose]);
+
   // Index and prepare all searchable items from memory
   const allItems = useMemo(() => {
     const allRequestItems: RequestPaletteItem[] = [];
@@ -407,25 +419,37 @@ function CommandPaletteModalContent({
             placeholder="Search requests, collections, environments, or history..."
             className="w-full bg-transparent text-slate-100 placeholder-slate-500 text-xs font-medium focus:outline-none"
           />
-          {query ? (
+          <div className="flex items-center space-x-1.5 shrink-0">
+            {query && (
+              <button
+                type="button"
+                onClick={() => {
+                  setQuery('');
+                  setRawSelectedIndex(0);
+                  inputRef.current?.focus();
+                }}
+                aria-label="Clear search input"
+                title="Clear search input"
+                className="text-slate-500 hover:text-slate-300 hover:bg-slate-800/80 px-1.5 py-0.5 rounded text-[10px] font-mono transition cursor-pointer"
+              >
+                Clear
+              </button>
+            )}
+            <kbd className="hidden sm:inline-flex items-center bg-slate-800 border border-slate-700 text-slate-400 text-[10px] px-1.5 py-0.5 rounded font-mono select-none">
+              ESC
+            </kbd>
             <button
               type="button"
-              onClick={() => {
-                setQuery('');
-                setRawSelectedIndex(0);
-                inputRef.current?.focus();
-              }}
-              className="text-slate-500 hover:text-slate-300 p-0.5 rounded cursor-pointer"
+              onClick={onClose}
+              aria-label="Close search"
+              title="Close search (Esc)"
+              className="text-slate-400 hover:text-slate-200 hover:bg-slate-800 focus:outline-none focus:ring-1 focus:ring-indigo-500 p-1 rounded-lg transition cursor-pointer"
             >
-              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
               </svg>
             </button>
-          ) : (
-            <kbd className="bg-slate-800 border border-slate-700 text-slate-400 text-[10px] px-1.5 py-0.5 rounded font-mono select-none">
-              ESC
-            </kbd>
-          )}
+          </div>
         </div>
 
         {/* Results List */}
