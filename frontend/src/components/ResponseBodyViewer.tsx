@@ -263,7 +263,7 @@ export default function ResponseBodyViewer({
     >
       <div className="flex flex-col">{renderedLines}</div>
       {isTruncated && (
-        <div className="mt-3 p-2.5 bg-slate-900/90 border border-amber-800/40 rounded-md text-[11px] font-mono text-amber-300 flex flex-col sm:flex-row sm:items-center justify-between gap-1 select-none">
+        <div className="mt-3 p-2.5 bg-slate-900/90 border border-amber-800/40 rounded-md text-[11px] font-mono text-amber-300 flex flex-col sm:flex-row sm:items-center justify-between gap-1">
           <span>
             ⚠️ Showing first {MAX_RENDERED_LINES.toLocaleString()} lines of large response ({allLines.length.toLocaleString()} lines total).
           </span>

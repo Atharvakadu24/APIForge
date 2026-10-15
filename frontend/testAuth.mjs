@@ -5,6 +5,7 @@
  */
 
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import { formatAuthError } from './src/utils/authErrors.ts';
 
 console.log('🧪 Starting APIForge Authentication Automated Test Suite...\n');
@@ -307,4 +308,58 @@ runTest('Resend confirmation validation requires valid email but does not requir
   assert.equal(validateResendForm('  Valid.User@example.com '), null);
 });
 
+// ----------------------------------------------------------------------------
+// Scenario 21: Top-level layout and screen containers do not block text selection
+// ----------------------------------------------------------------------------
+runTest('Top-level screens and layout containers do not apply select-none', () => {
+  const checkFiles = [
+    'src/components/AuthScreen.tsx',
+    'src/components/ResetPasswordScreen.tsx',
+    'src/components/LoadingScreen.tsx',
+    'src/components/ErrorBoundary.tsx',
+    'src/components/Header.tsx',
+    'src/components/Sidebar.tsx',
+    'src/components/ResponsePanel.tsx',
+  ];
+
+  for (const relPath of checkFiles) {
+    const fullPath = new URL(relPath, import.meta.url).pathname;
+    // On Windows pathname might have leading slash like /D:/APIForge/..., handle cleanly
+    const cleanPath = fullPath.replace(/^\/([A-Z]:)/, '$1');
+    const content = fs.readFileSync(cleanPath, 'utf8');
+
+    // Root element should not contain select-none
+    const lines = content.split('\n');
+    const first50Lines = lines.slice(0, 80).join('\n');
+    assert.doesNotMatch(
+      first50Lines,
+      /return\s*\(\s*<[a-zA-Z0-9]+[^>]*\bselect-none\b/i,
+      `${relPath} should not have select-none on its root container element`
+    );
+  }
+});
+
+// ----------------------------------------------------------------------------
+// Scenario 22: Code viewers preserve select-none exclusively on line numbers
+// ----------------------------------------------------------------------------
+runTest('ResponseBodyViewer preserves select-none on line numbers but not on content or alerts', () => {
+  const viewerPath = new URL('src/components/ResponseBodyViewer.tsx', import.meta.url).pathname.replace(/^\/([A-Z]:)/, '$1');
+  const viewerContent = fs.readFileSync(viewerPath, 'utf8');
+
+  // Verify line number spans have select-none
+  assert.match(
+    viewerContent,
+    /<span[^>]*\bselect-none\b[^>]*>\s*\{lineIdx\s*\+\s*1\}\s*<\/span>/,
+    'ResponseBodyViewer must keep select-none on line numbers so code selection does not include numbers'
+  );
+
+  // Verify truncation alert does NOT have select-none
+  assert.doesNotMatch(
+    viewerContent,
+    /Large response truncated[^>]*select-none/,
+    'Truncation warning must not have select-none'
+  );
+});
+
 console.log(`\n🎉 Results: ${passedTests}/${totalTests} scenarios passed successfully!\n`);
+

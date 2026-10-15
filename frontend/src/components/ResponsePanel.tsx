@@ -70,7 +70,7 @@ export default function ResponsePanel({ response, isSending }: ResponsePanelProp
   return (
     <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex-1 flex flex-col min-h-[260px] overflow-hidden">
       {/* Response Panel Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-800 pb-3 mb-2 gap-2 select-none">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-800 pb-3 mb-2 gap-2">
         <div className="flex items-center space-x-3 flex-wrap gap-y-2">
           <h2 className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center space-x-2">
             <span>Response</span>

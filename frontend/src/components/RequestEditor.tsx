@@ -370,7 +370,7 @@ export default function RequestEditor({
               {activeSavedRequestName}
             </span>
             {isDirty && (
-              <span className="flex items-center space-x-1 text-[10px] text-amber-400 font-medium bg-amber-950/60 border border-amber-800/40 px-2 py-0.5 rounded-full shrink-0 animate-fade-in select-none">
+              <span className="flex items-center space-x-1 text-[10px] text-amber-400 font-medium bg-amber-950/60 border border-amber-800/40 px-2 py-0.5 rounded-full shrink-0 animate-fade-in">
                 <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
                 <span>Unsaved changes</span>
               </span>
@@ -578,7 +578,7 @@ export default function RequestEditor({
               </div>
 
               {queryParams.length === 0 ? (
-                <div className="text-center py-8 border border-dashed border-slate-800 rounded-lg text-slate-500 select-none">
+                <div className="text-center py-8 border border-dashed border-slate-800 rounded-lg text-slate-500">
                   No query parameters defined. Click "Add Parameter" to start.
                 </div>
               ) : (
@@ -676,7 +676,7 @@ export default function RequestEditor({
               </div>
 
               {headers.length === 0 ? (
-                <div className="text-center py-8 border border-dashed border-slate-800 rounded-lg text-slate-500 select-none">
+                <div className="text-center py-8 border border-dashed border-slate-800 rounded-lg text-slate-500">
                   No headers defined. Click "Add Header" to start.
                 </div>
               ) : (
@@ -851,7 +851,7 @@ export default function RequestEditor({
 
               {/* 1. None View */}
               {bodyType === 'none' && (
-                <div className="flex flex-col items-center justify-center py-10 text-center space-y-2 border border-dashed border-slate-850 rounded-lg bg-slate-950/20 select-none">
+                <div className="flex flex-col items-center justify-center py-10 text-center space-y-2 border border-dashed border-slate-850 rounded-lg bg-slate-950/20">
                   <div className="w-9 h-9 rounded-full bg-slate-900 flex items-center justify-center border border-slate-800 text-slate-500">
                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
@@ -937,7 +937,7 @@ export default function RequestEditor({
                   </div>
 
                   {formUrlEncoded.length === 0 ? (
-                    <div className="text-center py-8 border border-dashed border-slate-800 rounded-lg text-slate-500 select-none">
+                    <div className="text-center py-8 border border-dashed border-slate-800 rounded-lg text-slate-500">
                       No form-urlencoded fields defined. Click "Add Field" to start.
                     </div>
                   ) : (
@@ -1050,7 +1050,7 @@ export default function RequestEditor({
                   </div>
 
                   {multipartFormData.length === 0 ? (
-                    <div className="text-center py-8 border border-dashed border-slate-800 rounded-lg text-slate-500 select-none">
+                    <div className="text-center py-8 border border-dashed border-slate-800 rounded-lg text-slate-500">
                       No multipart fields defined. Click "Add Field" to start.
                     </div>
                   ) : (
@@ -1172,7 +1172,7 @@ export default function RequestEditor({
 
               {/* No Auth State */}
               {auth.type === 'none' && (
-                <div className="flex flex-col items-center justify-center py-10 text-center space-y-2 border border-dashed border-slate-850 rounded-lg bg-slate-950/20 select-none">
+                <div className="flex flex-col items-center justify-center py-10 text-center space-y-2 border border-dashed border-slate-850 rounded-lg bg-slate-950/20">
                   <div className="w-9 h-9 rounded-full bg-slate-900 flex items-center justify-center border border-slate-800 text-slate-500">
                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />

@@ -1,6 +1,6 @@
 export default function LoadingScreen() {
   return (
-    <div className="min-h-screen w-screen bg-slate-950 flex flex-col items-center justify-center select-none text-slate-100">
+    <div className="min-h-screen w-screen bg-slate-950 flex flex-col items-center justify-center text-slate-100">
       <div className="flex flex-col items-center space-y-4">
         {/* Animated Brand Logo */}
         <div className="relative">

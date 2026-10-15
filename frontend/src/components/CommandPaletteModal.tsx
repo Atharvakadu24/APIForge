@@ -444,7 +444,7 @@ function CommandPaletteModalContent({
             filteredGroups.map((group) => (
               <div key={group.key} className="space-y-1">
                 {/* Group Label */}
-                <div className="flex items-center justify-between px-2 py-1 select-none">
+                <div className="flex items-center justify-between px-2 py-1">
                   <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
                     {group.label}
                   </span>
@@ -570,7 +570,7 @@ function CommandPaletteModalContent({
         </div>
 
         {/* Footer Shortcut Hints */}
-        <div className="border-t border-slate-800 bg-slate-950/60 px-4 py-2 flex items-center justify-between text-[10px] text-slate-500 select-none shrink-0">
+        <div className="border-t border-slate-800 bg-slate-950/60 px-4 py-2 flex items-center justify-between text-[10px] text-slate-500 shrink-0">
           <div className="flex items-center space-x-3">
             <span className="flex items-center space-x-1">
               <kbd className="bg-slate-850 border border-slate-750 px-1 py-0.2 rounded text-[9px] font-mono text-slate-400">↑</kbd>

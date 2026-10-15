@@ -1204,7 +1204,7 @@ function AuthenticatedWorkspace({ user, onSignOut }: AuthenticatedWorkspaceProps
       {/* Centered Workspace layout */}
       <div className="max-w-5xl w-full mx-auto flex flex-col space-y-4 min-h-full pb-10">
         {/* Workspace status bar */}
-        <div className="bg-slate-900/40 border border-slate-850 px-4 py-2 rounded-lg flex items-center justify-between text-xs text-slate-400 select-none">
+        <div className="bg-slate-900/40 border border-slate-850 px-4 py-2 rounded-lg flex items-center justify-between text-xs text-slate-400">
           <div className="flex items-center space-x-2">
             <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
             <span className="font-semibold text-slate-300">Status: Backend Engine Active</span>

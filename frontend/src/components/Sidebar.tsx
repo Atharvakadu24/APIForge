@@ -542,7 +542,7 @@ export default function Sidebar({
   };
 
   return (
-    <aside className="w-64 border-r border-slate-800 bg-slate-900/60 backdrop-blur-sm flex flex-col h-full app-height select-none shrink-0 overflow-hidden">
+    <aside className="w-64 border-r border-slate-800 bg-slate-900/60 backdrop-blur-sm flex flex-col h-full app-height shrink-0 overflow-hidden">
       {/* New Request Button */}
       <div className="p-3 shrink-0">
         <button

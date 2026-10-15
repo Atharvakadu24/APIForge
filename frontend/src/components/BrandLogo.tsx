@@ -140,7 +140,7 @@ export default function BrandLogo({
     : 'bg-gradient-to-r from-sky-400 via-indigo-300 to-purple-400 bg-clip-text text-transparent';
 
   return (
-    <div className={`flex items-center space-x-2.5 select-none ${className}`}>
+    <div className={`flex items-center space-x-2.5 ${className}`}>
       <BrandIcon sizePx={currentSize.px} />
       <span
         className={`font-black tracking-tight ${currentSize.text} ${wordmarkClassName}`}

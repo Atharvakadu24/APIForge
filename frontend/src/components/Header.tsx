@@ -64,7 +64,7 @@ export default function Header({
   const userInitials = getUserInitials(user?.email);
 
   return (
-    <header className="h-12 border-b border-slate-800 bg-slate-900 px-4 flex items-center justify-between select-none shrink-0 z-50">
+    <header className="h-12 border-b border-slate-800 bg-slate-900 px-4 flex items-center justify-between shrink-0 z-50">
       {/* Left section: Logo & Workspace */}
       <div className="flex items-center space-x-4">
         <BrandLogo size="sm" />
