@@ -430,20 +430,17 @@ function CommandPaletteModalContent({
                 }}
                 aria-label="Clear search input"
                 title="Clear search input"
-                className="text-slate-500 hover:text-slate-300 hover:bg-slate-800/80 px-1.5 py-0.5 rounded text-[10px] font-mono transition cursor-pointer"
+                className="text-slate-400 hover:text-slate-200 hover:bg-slate-800/80 px-1.5 py-0.5 rounded text-[10px] font-mono transition cursor-pointer"
               >
                 Clear
               </button>
             )}
-            <kbd className="hidden sm:inline-flex items-center bg-slate-800 border border-slate-700 text-slate-400 text-[10px] px-1.5 py-0.5 rounded font-mono select-none">
-              ESC
-            </kbd>
             <button
               type="button"
               onClick={onClose}
               aria-label="Close search"
               title="Close search (Esc)"
-              className="text-slate-400 hover:text-slate-200 hover:bg-slate-800 focus:outline-none focus:ring-1 focus:ring-indigo-500 p-1 rounded-lg transition cursor-pointer"
+              className="text-slate-200 hover:text-white bg-slate-800 hover:bg-slate-700 border border-slate-700/60 focus:outline-none focus:ring-1 focus:ring-indigo-500 p-1 rounded-lg transition cursor-pointer shrink-0"
             >
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />

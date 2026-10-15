@@ -375,6 +375,20 @@ runTest('CommandPaletteModal provides visible accessible close button and Escape
     'CommandPaletteModal must contain an accessible close button with aria-label="Close search" and title="Close search (Esc)"'
   );
 
+  // Verify close button contains enhanced visibility styles (text-slate-200 and bg-slate-800)
+  assert.match(
+    modalContent,
+    /<button[^>]*class(?:Name)?="[^"]*\btext-slate-200\b[^"]*\bbg-slate-800\b/s,
+    'Close button must use enhanced visibility styling (text-slate-200 and bg-slate-800)'
+  );
+
+  // Verify ESC badge is completely removed from the search header
+  assert.doesNotMatch(
+    modalContent,
+    /<kbd[^>]*>\s*ESC\s*<\/kbd>/,
+    'CommandPaletteModal must not have an ESC badge in the search header'
+  );
+
   // Verify close button contains the SVG close (×) icon
   assert.match(
     modalContent,
