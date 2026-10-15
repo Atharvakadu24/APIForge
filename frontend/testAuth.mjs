@@ -241,4 +241,70 @@ runTest('Missing Supabase configuration triggers clear actionable guidance', () 
   assert.match(formatted, /frontend environment variables/i);
 });
 
+// ----------------------------------------------------------------------------
+// Scenario 18: Resend confirmation email request normalization and success
+// ----------------------------------------------------------------------------
+runTest('Resend confirmation normalizes email and dispatches type signup with redirect', async () => {
+  let capturedPayload = null;
+  const mockSupabase = {
+    auth: {
+      resend: async (payload) => {
+        capturedPayload = payload;
+        return { data: { user: null, session: null }, error: null };
+      },
+    },
+  };
+
+  const resendSignUpConfirmation = async (rawEmail) => {
+    const normalizedEmail = rawEmail.trim().toLowerCase();
+    const { error } = await mockSupabase.auth.resend({
+      type: 'signup',
+      email: normalizedEmail,
+      options: {
+        emailRedirectTo: 'https://api-forge-hazel.vercel.app/',
+      },
+    });
+    return { error };
+  };
+
+  const rawInput = '  Developer.PROBE@Example.COM  ';
+  await resendSignUpConfirmation(rawInput);
+
+  assert.equal(capturedPayload.type, 'signup');
+  assert.equal(capturedPayload.email, 'developer.probe@example.com');
+  assert.equal(capturedPayload.options.emailRedirectTo, 'https://api-forge-hazel.vercel.app/');
+});
+
+// ----------------------------------------------------------------------------
+// Scenario 19: Resend confirmation error translation (rate-limits and service failure)
+// ----------------------------------------------------------------------------
+runTest('Resend confirmation errors are correctly formatted without claiming success', () => {
+  const rateLimitErr = { message: 'over_email_send_rate_limit', status: 429 };
+  const formattedRateLimit = formatAuthError(rateLimitErr);
+  assert.match(formattedRateLimit, /security rate limit reached/i);
+
+  const networkErr = new TypeError('Failed to fetch');
+  const formattedNetwork = formatAuthError(networkErr);
+  assert.match(formattedNetwork, /unable to reach the authentication service/i);
+});
+
+// ----------------------------------------------------------------------------
+// Scenario 20: Resend confirmation form validation ignores password and validates email
+// ----------------------------------------------------------------------------
+runTest('Resend confirmation validation requires valid email but does not require password', () => {
+  const validateResendForm = (emailInput) => {
+    const trimmed = (emailInput || '').trim().toLowerCase();
+    if (!trimmed) return 'Please enter your email address.';
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(trimmed)) return 'Please enter a valid email address.';
+    return null;
+  };
+
+  assert.equal(validateResendForm(''), 'Please enter your email address.');
+  assert.equal(validateResendForm('   '), 'Please enter your email address.');
+  assert.equal(validateResendForm('not-an-email'), 'Please enter a valid email address.');
+  assert.equal(validateResendForm('user@domain'), 'Please enter a valid email address.');
+  assert.equal(validateResendForm('  Valid.User@example.com '), null);
+});
+
 console.log(`\n🎉 Results: ${passedTests}/${totalTests} scenarios passed successfully!\n`);

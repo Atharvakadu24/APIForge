@@ -66,8 +66,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signInWithPassword = async (email: string, password: string) => {
     try {
+      const normalizedEmail = email.trim().toLowerCase();
       const { data, error } = await supabase.auth.signInWithPassword({
-        email: email.trim(),
+        email: normalizedEmail,
         password,
       });
 
@@ -85,8 +86,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signUpWithPassword = async (email: string, password: string) => {
     try {
+      const normalizedEmail = email.trim().toLowerCase();
       const { data, error } = await supabase.auth.signUp({
-        email: email.trim(),
+        email: normalizedEmail,
         password,
         options: {
           emailRedirectTo: getAuthRedirectUrl(),
@@ -115,8 +117,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const resetPasswordForEmail = async (email: string) => {
     try {
-      const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+      const normalizedEmail = email.trim().toLowerCase();
+      const { error } = await supabase.auth.resetPasswordForEmail(normalizedEmail, {
         redirectTo: getAuthRedirectUrl(),
+      });
+      return { error };
+    } catch (err: unknown) {
+      const authErr = err as AuthError;
+      return { error: authErr };
+    }
+  };
+
+  const resendSignUpConfirmation = async (email: string) => {
+    try {
+      const normalizedEmail = email.trim().toLowerCase();
+      const { error } = await supabase.auth.resend({
+        type: 'signup',
+        email: normalizedEmail,
+        options: {
+          emailRedirectTo: getAuthRedirectUrl(),
+        },
       });
       return { error };
     } catch (err: unknown) {
@@ -177,6 +197,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       signInWithPassword,
       signUpWithPassword,
       resetPasswordForEmail,
+      resendSignUpConfirmation,
       updatePassword,
       signOut,
       clearPasswordRecovery,

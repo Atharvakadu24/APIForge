@@ -3,10 +3,15 @@ import { useAuth } from '../hooks/useAuth';
 import { formatAuthError } from '../utils/authErrors';
 import { BrandIcon } from './BrandLogo';
 
-export type AuthMode = 'signin' | 'signup' | 'forgot_password';
+export type AuthMode = 'signin' | 'signup' | 'forgot_password' | 'resend_confirmation';
 
 export default function AuthScreen() {
-  const { signInWithPassword, signUpWithPassword, resetPasswordForEmail } = useAuth();
+  const {
+    signInWithPassword,
+    signUpWithPassword,
+    resetPasswordForEmail,
+    resendSignUpConfirmation,
+  } = useAuth();
 
   const [mode, setMode] = useState<AuthMode>('signin');
   const [email, setEmail] = useState('');
@@ -22,7 +27,7 @@ export default function AuthScreen() {
     setErrorMessage(null);
     setSuccessMessage(null);
 
-    const emailTrimmed = email.trim();
+    const emailTrimmed = email.trim().toLowerCase();
     if (!emailTrimmed) {
       setErrorMessage('Please enter your email address.');
       return false;
@@ -34,7 +39,7 @@ export default function AuthScreen() {
       return false;
     }
 
-    if (mode === 'forgot_password') {
+    if (mode === 'forgot_password' || mode === 'resend_confirmation') {
       return true;
     }
 
@@ -97,6 +102,15 @@ export default function AuthScreen() {
             'If an account exists for this email, a password reset link has been sent. Please check your inbox.'
           );
         }
+      } else if (mode === 'resend_confirmation') {
+        const { error } = await resendSignUpConfirmation(email);
+        if (error) {
+          setErrorMessage(formatAuthError(error));
+        } else {
+          setSuccessMessage(
+            'If an unconfirmed account exists for this email, a new confirmation link has been sent. Please check your inbox and spam folder.'
+          );
+        }
       }
     } catch (err: unknown) {
       setErrorMessage(formatAuthError(err));
@@ -126,16 +140,18 @@ export default function AuthScreen() {
             {mode === 'signin' && 'Welcome to APIForge'}
             {mode === 'signup' && 'Create an Account'}
             {mode === 'forgot_password' && 'Reset Your Password'}
+            {mode === 'resend_confirmation' && 'Resend Confirmation Email'}
           </h1>
           <p className="text-xs text-slate-400 mt-1 max-w-xs">
             {mode === 'signin' && 'Sign in to access your API testing workspace and environments.'}
             {mode === 'signup' && 'Join APIForge to build, test, and manage your API workflows.'}
             {mode === 'forgot_password' && 'Enter your registered email address to receive a secure recovery link.'}
+            {mode === 'resend_confirmation' && 'Enter your registered email address to receive a new signup confirmation link.'}
           </p>
         </div>
 
         {/* Tab Switcher (Visible in Sign In and Sign Up modes) */}
-        {mode !== 'forgot_password' ? (
+        {mode === 'signin' || mode === 'signup' ? (
           <div className="grid grid-cols-2 p-1 bg-slate-950 border border-slate-800 rounded-xl mb-5">
             <button
               type="button"
@@ -181,7 +197,23 @@ export default function AuthScreen() {
             <svg className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
-            <span className="flex-1 leading-relaxed">{errorMessage}</span>
+            <div className="flex-1 leading-relaxed">
+              <span>{errorMessage}</span>
+              {mode === 'signin' &&
+                (errorMessage.toLowerCase().includes('confirm your email') ||
+                  errorMessage.toLowerCase().includes('not been confirmed')) && (
+                  <div className="mt-2 pt-1.5 border-t border-rose-800/50 flex items-center justify-between">
+                    <span className="text-[11px] text-rose-300/80">Need a new confirmation link?</span>
+                    <button
+                      type="button"
+                      onClick={() => switchMode('resend_confirmation')}
+                      className="text-[11px] text-rose-200 hover:text-white font-bold underline underline-offset-2 cursor-pointer transition"
+                    >
+                      Resend email &rarr;
+                    </button>
+                  </div>
+                )}
+            </div>
           </div>
         )}
 
@@ -190,7 +222,22 @@ export default function AuthScreen() {
             <svg className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
             </svg>
-            <span className="flex-1 leading-relaxed">{successMessage}</span>
+            <div className="flex-1 leading-relaxed">
+              <span>{successMessage}</span>
+              {mode === 'signin' &&
+                successMessage.toLowerCase().includes('confirmation link') && (
+                  <div className="mt-2 pt-1.5 border-t border-emerald-800/50 flex items-center justify-between">
+                    <span className="text-[11px] text-emerald-300/80">Didn&apos;t receive the email?</span>
+                    <button
+                      type="button"
+                      onClick={() => switchMode('resend_confirmation')}
+                      className="text-[11px] text-emerald-200 hover:text-white font-bold underline underline-offset-2 cursor-pointer transition"
+                    >
+                      Resend email &rarr;
+                    </button>
+                  </div>
+                )}
+            </div>
           </div>
         )}
 
@@ -221,7 +268,7 @@ export default function AuthScreen() {
           </div>
 
           {/* Password field (Sign In & Sign Up) */}
-          {mode !== 'forgot_password' && (
+          {mode !== 'forgot_password' && mode !== 'resend_confirmation' && (
             <div>
               <div className="flex items-center justify-between mb-1.5">
                 <label className="block text-xs font-semibold text-slate-300" htmlFor="auth-password">
@@ -319,6 +366,7 @@ export default function AuthScreen() {
                   {mode === 'signin' && 'Signing in...'}
                   {mode === 'signup' && 'Creating account...'}
                   {mode === 'forgot_password' && 'Sending reset link...'}
+                  {mode === 'resend_confirmation' && 'Sending confirmation link...'}
                 </span>
               </>
             ) : (
@@ -326,6 +374,7 @@ export default function AuthScreen() {
                 {mode === 'signin' && 'Sign In to Workspace'}
                 {mode === 'signup' && 'Create Account'}
                 {mode === 'forgot_password' && 'Send Password Reset Email'}
+                {mode === 'resend_confirmation' && 'Resend Confirmation Email'}
               </span>
             )}
           </button>
@@ -333,9 +382,9 @@ export default function AuthScreen() {
 
         {/* Footer info */}
         <div className="mt-6 pt-4 border-t border-slate-800/80 text-center">
-          <p className="text-[11px] text-slate-500">
-            {mode === 'signin' && (
-              <>
+          {mode === 'signin' && (
+            <div className="space-y-1.5">
+              <p className="text-[11px] text-slate-500">
                 Don&apos;t have an account yet?{' '}
                 <button
                   type="button"
@@ -344,33 +393,55 @@ export default function AuthScreen() {
                 >
                   Create one here
                 </button>
-              </>
-            )}
-            {mode === 'signup' && (
-              <>
-                Already have an account?{' '}
+              </p>
+              <p className="text-[11px] text-slate-500">
+                Didn&apos;t receive confirmation email?{' '}
                 <button
                   type="button"
-                  onClick={() => switchMode('signin')}
+                  onClick={() => switchMode('resend_confirmation')}
                   className="text-indigo-400 hover:text-indigo-300 font-semibold cursor-pointer underline-offset-2 hover:underline"
                 >
-                  Sign in here
+                  Resend confirmation link
                 </button>
-              </>
-            )}
-            {mode === 'forgot_password' && (
-              <>
-                Remember your password?{' '}
-                <button
-                  type="button"
-                  onClick={() => switchMode('signin')}
-                  className="text-indigo-400 hover:text-indigo-300 font-semibold cursor-pointer underline-offset-2 hover:underline"
-                >
-                  Sign in here
-                </button>
-              </>
-            )}
-          </p>
+              </p>
+            </div>
+          )}
+          {mode === 'signup' && (
+            <p className="text-[11px] text-slate-500">
+              Already have an account?{' '}
+              <button
+                type="button"
+                onClick={() => switchMode('signin')}
+                className="text-indigo-400 hover:text-indigo-300 font-semibold cursor-pointer underline-offset-2 hover:underline"
+              >
+                Sign in here
+              </button>
+            </p>
+          )}
+          {mode === 'forgot_password' && (
+            <p className="text-[11px] text-slate-500">
+              Remember your password?{' '}
+              <button
+                type="button"
+                onClick={() => switchMode('signin')}
+                className="text-indigo-400 hover:text-indigo-300 font-semibold cursor-pointer underline-offset-2 hover:underline"
+              >
+                Sign in here
+              </button>
+            </p>
+          )}
+          {mode === 'resend_confirmation' && (
+            <p className="text-[11px] text-slate-500">
+              Already confirmed your email?{' '}
+              <button
+                type="button"
+                onClick={() => switchMode('signin')}
+                className="text-indigo-400 hover:text-indigo-300 font-semibold cursor-pointer underline-offset-2 hover:underline"
+              >
+                Sign in here
+              </button>
+            </p>
+          )}
         </div>
       </div>
     </div>

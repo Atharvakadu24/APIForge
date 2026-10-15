@@ -13,6 +13,7 @@ export interface AuthContextType {
     session: Session | null;
   }>;
   resetPasswordForEmail: (email: string) => Promise<{ error: AuthError | null }>;
+  resendSignUpConfirmation: (email: string) => Promise<{ error: AuthError | null }>;
   updatePassword: (newPassword: string) => Promise<{ error: AuthError | null }>;
   signOut: () => Promise<{ error: AuthError | null }>;
   clearPasswordRecovery: () => void;
