@@ -38,19 +38,20 @@ export function formatAuthError(error: unknown): string {
     return 'Supabase project configuration is missing or invalid. Please check your frontend environment variables (VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY).';
   }
 
-  // 3. Invalid credentials
+  // 3. Invalid credentials (or unconfirmed account under user enumeration protection)
   if (
     rawMessage.includes('Invalid login credentials') ||
     rawMessage.includes('invalid_credentials') ||
-    (status === 400 && rawMessage.toLowerCase().includes('invalid'))
+    errorCode === 'invalid_credentials'
   ) {
-    return 'Invalid email address or password. Please verify your credentials and try again.';
+    return 'Invalid email address or password. Please verify your credentials, or if you recently registered, check your inbox to confirm your email address.';
   }
 
   // 4. Email not confirmed
   if (
     rawMessage.includes('Email not confirmed') ||
-    rawMessage.includes('email_not_confirmed')
+    rawMessage.includes('email_not_confirmed') ||
+    errorCode === 'email_not_confirmed'
   ) {
     return 'Your email address has not been confirmed yet. Please check your inbox for the confirmation link before signing in.';
   }
