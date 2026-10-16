@@ -158,25 +158,25 @@ function EnvironmentModalContent({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 backdrop-blur-xs p-4 animate-fade-in">
-      <div className="bg-slate-900 border border-slate-800 rounded-xl shadow-2xl max-w-4xl w-full h-[600px] flex flex-col overflow-hidden">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 backdrop-blur-xs p-2 sm:p-4 animate-fade-in">
+      <div className="bg-slate-900 border border-slate-800 rounded-xl shadow-2xl max-w-4xl w-full h-[90vh] sm:h-[600px] max-h-[640px] flex flex-col overflow-hidden">
         {/* Modal Header */}
-        <div className="px-5 py-3.5 border-b border-slate-800 flex items-center justify-between bg-slate-900/90 shrink-0">
-          <div className="flex items-center space-x-2.5">
-            <div className="w-6 h-6 rounded-md bg-indigo-600/20 text-indigo-400 flex items-center justify-center">
+        <div className="px-4 sm:px-5 py-3 sm:py-3.5 border-b border-slate-800 flex items-center justify-between bg-slate-900/90 shrink-0">
+          <div className="flex items-center space-x-2.5 min-w-0">
+            <div className="w-6 h-6 rounded-md bg-indigo-600/20 text-indigo-400 flex items-center justify-center shrink-0">
               <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
               </svg>
             </div>
-            <div>
-              <h3 className="text-sm font-bold text-slate-100">Environment Manager</h3>
-              <p className="text-[10px] text-slate-400">Configure key-value variables referenced as <code className="text-indigo-300 font-mono">{'{{variable_name}}'}</code></p>
+            <div className="min-w-0">
+              <h3 className="text-sm font-bold text-slate-100 truncate">Environment Manager</h3>
+              <p className="text-[10px] text-slate-400 truncate">Configure variables referenced as <code className="text-indigo-300 font-mono">{'{{variable_name}}'}</code></p>
             </div>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="text-slate-500 hover:text-slate-300 p-1 rounded-lg hover:bg-slate-800 transition cursor-pointer"
+            className="text-slate-500 hover:text-slate-300 p-1 rounded-lg hover:bg-slate-800 transition cursor-pointer shrink-0 ml-2"
           >
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -185,10 +185,10 @@ function EnvironmentModalContent({
         </div>
 
         {/* Modal Main Layout: 2-Column Split */}
-        <div className="flex flex-1 overflow-hidden">
+        <div className="flex flex-col md:flex-row flex-1 overflow-hidden">
           {/* Left Sidebar: Environments List */}
-          <div className="w-64 border-r border-slate-800 bg-slate-950/40 flex flex-col shrink-0">
-            <div className="p-3 border-b border-slate-850 flex items-center justify-between">
+          <div className="w-full md:w-64 border-b md:border-b-0 md:border-r border-slate-800 bg-slate-950/40 flex flex-col shrink-0">
+            <div className="p-2.5 sm:p-3 border-b border-slate-850 flex items-center justify-between">
               <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Environments</span>
               <button
                 type="button"
@@ -233,7 +233,7 @@ function EnvironmentModalContent({
             )}
 
             {/* Environments Navigation List */}
-            <div className="flex-1 overflow-y-auto p-2 space-y-1">
+            <div className="flex md:flex-col overflow-x-auto md:overflow-y-auto p-2 gap-1.5 md:gap-1 shrink-0 max-h-36 md:max-h-none no-scrollbar">
               {environments.length === 0 ? (
                 <div className="p-4 text-center">
                   <p className="text-[11px] text-slate-500">No environments</p>
@@ -285,7 +285,7 @@ function EnvironmentModalContent({
                     <div
                       key={env.id}
                       onClick={() => setSelectedEnvId(env.id)}
-                      className={`group flex items-center justify-between px-2.5 py-2 rounded-lg cursor-pointer transition text-xs ${
+                      className={`group flex items-center justify-between px-2.5 py-1.5 md:py-2 rounded-lg cursor-pointer transition text-xs shrink-0 whitespace-nowrap ${
                         isSelected
                           ? 'bg-slate-800 text-slate-100 font-semibold shadow-sm'
                           : 'text-slate-400 hover:bg-slate-850 hover:text-slate-200'
@@ -300,8 +300,8 @@ function EnvironmentModalContent({
                         )}
                       </div>
 
-                      {/* Row actions on hover */}
-                      <div className="flex items-center space-x-1 opacity-0 group-hover:opacity-100 transition shrink-0 ml-1">
+                      {/* Row actions on hover or visible on touch */}
+                      <div className="flex items-center space-x-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition shrink-0 ml-1.5">
                         <button
                           type="button"
                           onClick={(e) => {
@@ -338,11 +338,11 @@ function EnvironmentModalContent({
           </div>
 
           {/* Right Panel: Variable Grid for Active Selected Environment */}
-          <div className="flex-1 flex flex-col overflow-hidden bg-slate-900/60 p-5">
+          <div className="flex-1 flex flex-col overflow-hidden bg-slate-900/60 p-3 sm:p-5">
             {activeSelectedEnv ? (
               <div className="flex flex-col h-full space-y-4">
                 {/* Top Info Bar */}
-                <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+                <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-slate-800">
                   <div className="flex items-center space-x-3">
                     <h4 className="text-sm font-bold text-slate-100">{activeSelectedEnv.name}</h4>
                     <span className="text-xs text-slate-500 font-mono">
@@ -384,16 +384,17 @@ function EnvironmentModalContent({
                 )}
 
                 {/* Variable Table Header */}
-                <div className="flex-1 overflow-y-auto pr-1">
-                  <table className="w-full text-left text-xs border-collapse">
-                    <thead>
-                      <tr className="border-b border-slate-800 text-[10px] font-bold uppercase tracking-wider text-slate-500">
-                        <th className="py-2 px-2 w-10 text-center">Use</th>
-                        <th className="py-2 px-2 w-1/3">Variable Name</th>
-                        <th className="py-2 px-2">Value</th>
-                        <th className="py-2 px-2 w-10 text-center"></th>
-                      </tr>
-                    </thead>
+                <div className="flex-1 overflow-y-auto overflow-x-auto pr-1">
+                  <div className="min-w-[420px]">
+                    <table className="w-full text-left text-xs border-collapse">
+                      <thead>
+                        <tr className="border-b border-slate-800 text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                          <th className="py-2 px-2 w-10 text-center">Use</th>
+                          <th className="py-2 px-2 w-1/3">Variable Name</th>
+                          <th className="py-2 px-2">Value</th>
+                          <th className="py-2 px-2 w-10 text-center"></th>
+                        </tr>
+                      </thead>
                     <tbody className="divide-y divide-slate-850/60 font-mono">
                       {activeSelectedEnv.variables.length === 0 ? (
                         <tr>
@@ -482,6 +483,7 @@ function EnvironmentModalContent({
                       )}
                     </tbody>
                   </table>
+                  </div>
                 </div>
 
                 {/* Table Bottom Action */}

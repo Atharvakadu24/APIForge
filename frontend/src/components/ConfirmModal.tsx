@@ -33,14 +33,14 @@ export default function ConfirmModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-fade-in"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-2 sm:p-4 animate-fade-in"
       onClick={onClose}
     >
       <div
-        className="bg-slate-900 border border-slate-800 rounded-xl shadow-2xl max-w-md w-full overflow-hidden"
+        className="bg-slate-900 border border-slate-800 rounded-xl shadow-2xl max-w-md w-full overflow-hidden max-h-[90vh] flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="p-5">
+        <div className="p-4 sm:p-5 overflow-y-auto">
           <div className="flex items-start space-x-3.5">
             <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${isDestructive ? 'bg-rose-950/60 text-rose-400 border border-rose-800/40' : 'bg-indigo-950/60 text-indigo-400 border border-indigo-800/40'}`}>
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">

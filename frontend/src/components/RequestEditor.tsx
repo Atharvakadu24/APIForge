@@ -357,16 +357,42 @@ export default function RequestEditor({
 
   const hasAuth = auth.type !== 'none';
 
+  const sendCancelButton = isSending ? (
+    <button
+      type="button"
+      onClick={onCancel}
+      className="bg-rose-600 hover:bg-rose-500 active:bg-rose-700 text-white font-semibold text-xs py-2 px-3.5 sm:px-4.5 rounded-lg shadow-lg shadow-rose-600/20 hover:shadow-rose-500/30 transition duration-150 flex items-center space-x-1.5 cursor-pointer shrink-0"
+      title="Cancel in-flight request"
+    >
+      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
+      </svg>
+      <span>Cancel</span>
+    </button>
+  ) : (
+    <button
+      type="button"
+      onClick={onSend}
+      title="Send request (Ctrl+Enter / Cmd+Enter)"
+      className="bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs py-2 px-4 sm:px-5 rounded-lg shadow-lg shadow-indigo-650/15 hover:shadow-indigo-500/25 transition duration-200 flex items-center space-x-1.5 cursor-pointer shrink-0"
+    >
+      <span>Send</span>
+      <svg className="w-3 h-3 text-indigo-200" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M14 5l7 7m0 0l-7 7m7-7H3" />
+      </svg>
+    </button>
+  );
+
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex flex-col space-y-4">
+    <div className="bg-slate-900 border border-slate-800 rounded-xl p-3 sm:p-4 flex flex-col space-y-4">
       {/* Active Saved Request Indicator Header */}
       {activeSavedRequestName && (
-        <div className="flex items-center justify-between text-xs pb-2 border-b border-slate-800/80">
-          <div className="flex items-center space-x-2 min-w-0">
+        <div className="flex flex-wrap items-center justify-between gap-2 text-xs pb-2 border-b border-slate-800/80">
+          <div className="flex items-center space-x-2 min-w-0 flex-wrap gap-y-1">
             <span className="text-[9px] font-bold uppercase tracking-wider text-indigo-400 bg-indigo-950/80 px-2 py-0.5 rounded border border-indigo-800/50 shrink-0">
               Saved Request
             </span>
-            <span className="text-slate-200 font-semibold truncate text-xs" title={activeSavedRequestName}>
+            <span className="text-slate-200 font-semibold truncate text-xs max-w-[180px] sm:max-w-xs" title={activeSavedRequestName}>
               {activeSavedRequestName}
             </span>
             {isDirty && (
@@ -403,130 +429,121 @@ export default function RequestEditor({
       )}
 
       {/* Top Request Composer */}
-      <div className="flex items-center space-x-2">
-        {/* Method Selector Dropdown */}
-        <div className="relative shrink-0">
-          <select
-            value={method}
-            onChange={(e) => setMethod(e.target.value as HttpMethod)}
-            disabled={isSending}
-            className={`bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs font-bold font-mono focus:outline-none focus:border-indigo-500 cursor-pointer appearance-none pr-8 disabled:opacity-60 disabled:cursor-not-allowed ${getMethodColor(method)}`}
-          >
-            {methods.map((m) => (
-              <option key={m} value={m} className={getMethodColor(m)}>
-                {m}
-              </option>
-            ))}
-          </select>
-          <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-slate-500">
-            <svg className="fill-current h-3 w-3" viewBox="0 0 20 20">
-              <path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z" />
-            </svg>
+      <div className="flex flex-col md:flex-row md:items-center gap-2">
+        {/* Method + URL + Send/Cancel (Primary Tier) */}
+        <div className="flex items-center space-x-2 flex-1 min-w-0">
+          {/* Method Selector Dropdown */}
+          <div className="relative shrink-0">
+            <select
+              value={method}
+              onChange={(e) => setMethod(e.target.value as HttpMethod)}
+              disabled={isSending}
+              className={`bg-slate-950 border border-slate-800 rounded-lg px-2.5 sm:px-3 py-2 text-xs font-bold font-mono focus:outline-none focus:border-indigo-500 cursor-pointer appearance-none pr-7 sm:pr-8 disabled:opacity-60 disabled:cursor-not-allowed ${getMethodColor(method)}`}
+            >
+              {methods.map((m) => (
+                <option key={m} value={m} className={getMethodColor(m)}>
+                  {m}
+                </option>
+              ))}
+            </select>
+            <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-1.5 sm:px-2 text-slate-500">
+              <svg className="fill-current h-3 w-3" viewBox="0 0 20 20">
+                <path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z" />
+              </svg>
+            </div>
+          </div>
+
+          {/* URL Input field */}
+          <div className="flex-1 min-w-0">
+            <input
+              type="text"
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+              disabled={isSending}
+              placeholder="Enter request URL (e.g. https://jsonplaceholder.typicode.com/todos/1)"
+              className="w-full bg-slate-950 border border-slate-800 text-slate-200 placeholder-slate-600 rounded-lg px-3 py-2 text-xs font-mono focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/35 transition disabled:opacity-60 disabled:cursor-not-allowed"
+            />
+          </div>
+
+          {/* Send / Cancel Button (Mobile: next to URL) */}
+          <div className="shrink-0 flex md:hidden">
+            {sendCancelButton}
           </div>
         </div>
 
-        {/* URL Input field */}
-        <div className="flex-1 min-w-0">
-          <input
-            type="text"
-            value={url}
-            onChange={(e) => setUrl(e.target.value)}
-            disabled={isSending}
-            placeholder="Enter request URL (e.g. https://jsonplaceholder.typicode.com/todos/1)"
-            className="w-full bg-slate-950 border border-slate-800 text-slate-200 placeholder-slate-600 rounded-lg px-3.5 py-2 text-xs font-mono focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/35 transition disabled:opacity-60 disabled:cursor-not-allowed"
-          />
+        {/* Secondary Utility Actions (Save, Code, Import, Export) + Send Button on Desktop */}
+        <div className="flex items-center flex-wrap gap-1.5 shrink-0 justify-between md:justify-start">
+          <div className="flex items-center flex-wrap gap-1.5">
+            {/* Save / Save As Button */}
+            {!activeSavedRequestName && (
+              <button
+                type="button"
+                onClick={onSave}
+                disabled={isSending}
+                className="bg-slate-800 hover:bg-slate-750 disabled:opacity-50 text-slate-300 hover:text-white font-semibold text-xs py-1.5 sm:py-2 px-2.5 sm:px-3.5 rounded-lg border border-slate-700/80 transition duration-150 flex items-center space-x-1.5 cursor-pointer disabled:cursor-not-allowed shadow-sm shrink-0"
+                title="Save request to collection"
+              >
+                <svg className="w-3.5 h-3.5 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+                </svg>
+                <span>Save</span>
+              </button>
+            )}
+
+            {/* Code Snippet Button */}
+            <button
+              type="button"
+              onClick={() => setIsCodeModalOpen(true)}
+              className="bg-slate-800 hover:bg-slate-750 text-slate-300 hover:text-white font-semibold text-xs py-1.5 sm:py-2 px-2.5 sm:px-3 rounded-lg border border-slate-700/80 transition duration-150 flex items-center space-x-1.5 cursor-pointer shadow-sm shrink-0"
+              title="Generate code snippet (cURL, fetch, Python, Axios)"
+            >
+              <svg className="w-3.5 h-3.5 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+              </svg>
+              <span>Code</span>
+            </button>
+
+            {/* Import Button */}
+            {onImport && (
+              <button
+                type="button"
+                onClick={onImport}
+                className="bg-slate-800 hover:bg-slate-750 text-slate-300 hover:text-white font-semibold text-xs py-1.5 sm:py-2 px-2.5 sm:px-3 rounded-lg border border-slate-700/80 transition duration-150 flex items-center space-x-1.5 cursor-pointer shadow-sm shrink-0"
+                title="Import request from JSON"
+              >
+                <svg className="w-3.5 h-3.5 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                </svg>
+                <span>Import</span>
+              </button>
+            )}
+
+            {/* Export Button */}
+            {onExport && (
+              <button
+                type="button"
+                onClick={onExport}
+                className="bg-slate-800 hover:bg-slate-750 text-slate-300 hover:text-white font-semibold text-xs py-1.5 sm:py-2 px-2.5 sm:px-3 rounded-lg border border-slate-700/80 transition duration-150 flex items-center space-x-1.5 cursor-pointer shadow-sm shrink-0"
+                title="Export request as APIForge JSON"
+              >
+                <svg className="w-3.5 h-3.5 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+                <span>Export</span>
+              </button>
+            )}
+          </div>
+
+          {/* Send / Cancel Button (Desktop: right of utility actions) */}
+          <div className="hidden md:flex shrink-0">
+            {sendCancelButton}
+          </div>
         </div>
-
-        {/* Save / Save As Button */}
-        {!activeSavedRequestName && (
-          <button
-            type="button"
-            onClick={onSave}
-            disabled={isSending}
-            className="bg-slate-800 hover:bg-slate-750 disabled:opacity-50 text-slate-300 hover:text-white font-semibold text-xs py-2 px-3.5 rounded-lg border border-slate-700/80 transition duration-150 flex items-center space-x-1.5 cursor-pointer disabled:cursor-not-allowed shadow-sm shrink-0"
-            title="Save request to collection"
-          >
-            <svg className="w-3.5 h-3.5 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
-            </svg>
-            <span>Save</span>
-          </button>
-        )}
-
-        {/* Code Snippet Button */}
-        <button
-          type="button"
-          onClick={() => setIsCodeModalOpen(true)}
-          className="bg-slate-800 hover:bg-slate-750 text-slate-300 hover:text-white font-semibold text-xs py-2 px-3 rounded-lg border border-slate-700/80 transition duration-150 flex items-center space-x-1.5 cursor-pointer shadow-sm shrink-0"
-          title="Generate code snippet (cURL, fetch, Python, Axios)"
-        >
-          <svg className="w-3.5 h-3.5 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
-          </svg>
-          <span>Code</span>
-        </button>
-
-        {/* Import Button */}
-        {onImport && (
-          <button
-            type="button"
-            onClick={onImport}
-            className="bg-slate-800 hover:bg-slate-750 text-slate-300 hover:text-white font-semibold text-xs py-2 px-3 rounded-lg border border-slate-700/80 transition duration-150 flex items-center space-x-1.5 cursor-pointer shadow-sm shrink-0"
-            title="Import request from JSON"
-          >
-            <svg className="w-3.5 h-3.5 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-            </svg>
-            <span>Import</span>
-          </button>
-        )}
-
-        {/* Export Button */}
-        {onExport && (
-          <button
-            type="button"
-            onClick={onExport}
-            className="bg-slate-800 hover:bg-slate-750 text-slate-300 hover:text-white font-semibold text-xs py-2 px-3 rounded-lg border border-slate-700/80 transition duration-150 flex items-center space-x-1.5 cursor-pointer shadow-sm shrink-0"
-            title="Export request as APIForge JSON"
-          >
-            <svg className="w-3.5 h-3.5 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-            </svg>
-            <span>Export</span>
-          </button>
-        )}
-
-        {/* Send / Cancel Button */}
-        {isSending ? (
-          <button
-            type="button"
-            onClick={onCancel}
-            className="bg-rose-600 hover:bg-rose-500 active:bg-rose-700 text-white font-semibold text-xs py-2 px-4.5 rounded-lg shadow-lg shadow-rose-600/20 hover:shadow-rose-500/30 transition duration-150 flex items-center space-x-1.5 cursor-pointer shrink-0"
-            title="Cancel in-flight request"
-          >
-            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-            <span>Cancel</span>
-          </button>
-        ) : (
-          <button
-            type="button"
-            onClick={onSend}
-            title="Send request (Ctrl+Enter / Cmd+Enter)"
-            className="bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs py-2 px-5 rounded-lg shadow-lg shadow-indigo-650/15 hover:shadow-indigo-500/25 transition duration-200 flex items-center space-x-1.5 cursor-pointer shrink-0"
-          >
-            <span>Send</span>
-            <svg className="w-3 h-3 text-indigo-200" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M14 5l7 7m0 0l-7 7m7-7H3" />
-            </svg>
-          </button>
-        )}
       </div>
 
       {/* Tabs list */}
       <div>
-        <div className="flex border-b border-slate-800 text-xs font-semibold text-slate-400">
+        <div className="flex border-b border-slate-800 text-xs font-semibold text-slate-400 overflow-x-auto no-scrollbar">
           {(
             [
               { id: 'params', label: 'Params', badge: activeParamsCount > 0 ? activeParamsCount : null },
@@ -538,7 +555,7 @@ export default function RequestEditor({
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`px-4 py-2 capitalize transition relative flex items-center space-x-1.5 cursor-pointer ${
+              className={`px-4 py-2 capitalize transition relative flex items-center space-x-1.5 cursor-pointer shrink-0 ${
                 activeTab === tab.id ? 'text-indigo-400 font-bold' : 'hover:text-slate-200'
               }`}
             >
@@ -582,14 +599,15 @@ export default function RequestEditor({
                   No query parameters defined. Click "Add Parameter" to start.
                 </div>
               ) : (
-                <div className="border border-slate-800/80 rounded-lg overflow-hidden bg-slate-950/20">
-                  <div className="grid grid-cols-12 gap-2 border-b border-slate-850 p-2 bg-slate-900/20 text-[10px] font-bold uppercase tracking-wider text-slate-450 font-mono">
-                    <div className="col-span-1 text-center">Active</div>
-                    <div className="col-span-3">Key</div>
-                    <div className="col-span-3">Value</div>
-                    <div className="col-span-4">Description</div>
-                    <div className="col-span-1 text-center">Delete</div>
-                  </div>
+                <div className="border border-slate-800/80 rounded-lg overflow-x-auto bg-slate-950/20">
+                  <div className="min-w-[500px]">
+                    <div className="grid grid-cols-12 gap-2 border-b border-slate-850 p-2 bg-slate-900/20 text-[10px] font-bold uppercase tracking-wider text-slate-450 font-mono">
+                      <div className="col-span-1 text-center">Active</div>
+                      <div className="col-span-3">Key</div>
+                      <div className="col-span-3">Value</div>
+                      <div className="col-span-4">Description</div>
+                      <div className="col-span-1 text-center">Delete</div>
+                    </div>
                   
                   <div className="divide-y divide-slate-850/80">
                     {queryParams.map((param) => (
@@ -654,9 +672,10 @@ export default function RequestEditor({
                     ))}
                   </div>
                 </div>
-              )}
-            </div>
-          )}
+              </div>
+            )}
+          </div>
+        )}
 
           {/* HEADERS TAB */}
           {activeTab === 'headers' && (
@@ -680,78 +699,80 @@ export default function RequestEditor({
                   No headers defined. Click "Add Header" to start.
                 </div>
               ) : (
-                <div className="border border-slate-800/80 rounded-lg overflow-hidden bg-slate-950/20">
-                  <div className="grid grid-cols-12 gap-2 border-b border-slate-850 p-2 bg-slate-900/20 text-[10px] font-bold uppercase tracking-wider text-slate-450 font-mono">
-                    <div className="col-span-1 text-center">Active</div>
-                    <div className="col-span-3">Key</div>
-                    <div className="col-span-3">Value</div>
-                    <div className="col-span-4">Description</div>
-                    <div className="col-span-1 text-center">Delete</div>
-                  </div>
-                  
-                  <div className="divide-y divide-slate-850/80">
-                    {headers.map((header) => (
-                      <div
-                        key={header.id}
-                        className={`grid grid-cols-12 gap-2 items-center p-2 hover:bg-slate-900/10 transition duration-150 ${
-                          !header.enabled ? 'opacity-55' : ''
-                        }`}
-                      >
-                        <div className="col-span-1 flex items-center justify-center">
-                          <input
-                            type="checkbox"
-                            checked={header.enabled}
-                            onChange={(e) => handleToggleHeader(header.id, e.target.checked)}
-                            className="w-3.5 h-3.5 rounded border-slate-800 text-indigo-600 bg-slate-950 focus:ring-indigo-500/30 cursor-pointer focus:ring-offset-0 focus:outline-none"
-                          />
+                <div className="border border-slate-800/80 rounded-lg overflow-x-auto bg-slate-950/20">
+                  <div className="min-w-[500px]">
+                    <div className="grid grid-cols-12 gap-2 border-b border-slate-850 p-2 bg-slate-900/20 text-[10px] font-bold uppercase tracking-wider text-slate-450 font-mono">
+                      <div className="col-span-1 text-center">Active</div>
+                      <div className="col-span-3">Key</div>
+                      <div className="col-span-3">Value</div>
+                      <div className="col-span-4">Description</div>
+                      <div className="col-span-1 text-center">Delete</div>
+                    </div>
+                    
+                    <div className="divide-y divide-slate-850/80">
+                      {headers.map((header) => (
+                        <div
+                          key={header.id}
+                          className={`grid grid-cols-12 gap-2 items-center p-2 hover:bg-slate-900/10 transition duration-150 ${
+                            !header.enabled ? 'opacity-55' : ''
+                          }`}
+                        >
+                          <div className="col-span-1 flex items-center justify-center">
+                            <input
+                              type="checkbox"
+                              checked={header.enabled}
+                              onChange={(e) => handleToggleHeader(header.id, e.target.checked)}
+                              className="w-3.5 h-3.5 rounded border-slate-800 text-indigo-600 bg-slate-950 focus:ring-indigo-500/30 cursor-pointer focus:ring-offset-0 focus:outline-none"
+                            />
+                          </div>
+                          
+                          <div className="col-span-3">
+                            <input
+                              type="text"
+                              value={header.key}
+                              onChange={(e) => handleUpdateHeader(header.id, 'key', e.target.value)}
+                              placeholder="Key"
+                              list="common-headers"
+                              className="w-full bg-slate-950 border border-slate-850/85 rounded px-2 py-1 text-slate-300 placeholder-slate-700 font-mono text-xs focus:outline-none focus:border-indigo-500 transition"
+                            />
+                          </div>
+                          
+                          <div className="col-span-3">
+                            <input
+                              type="text"
+                              value={header.value}
+                              onChange={(e) => handleUpdateHeader(header.id, 'value', e.target.value)}
+                              placeholder="Value"
+                              list="common-header-values"
+                              className="w-full bg-slate-950 border border-slate-850/85 rounded px-2 py-1 text-slate-300 placeholder-slate-700 font-mono text-xs focus:outline-none focus:border-indigo-500 transition"
+                            />
+                          </div>
+                          
+                          <div className="col-span-4">
+                            <input
+                              type="text"
+                              value={header.description || ''}
+                              onChange={(e) => handleUpdateHeader(header.id, 'description', e.target.value)}
+                              placeholder="Description"
+                              className="w-full bg-slate-950 border border-slate-850/85 rounded px-2 py-1 text-slate-350 placeholder-slate-700 font-mono text-xs focus:outline-none focus:border-indigo-500 transition"
+                            />
+                          </div>
+                          
+                          <div className="col-span-1 flex items-center justify-center">
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteHeader(header.id)}
+                              className="text-slate-500 hover:text-rose-400 p-1 rounded transition duration-150 hover:bg-rose-950/20 active:scale-95 cursor-pointer"
+                              title="Delete Header"
+                            >
+                              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                              </svg>
+                            </button>
+                          </div>
                         </div>
-                        
-                        <div className="col-span-3">
-                          <input
-                            type="text"
-                            value={header.key}
-                            onChange={(e) => handleUpdateHeader(header.id, 'key', e.target.value)}
-                            placeholder="Key"
-                            list="common-headers"
-                            className="w-full bg-slate-950 border border-slate-850/85 rounded px-2 py-1 text-slate-300 placeholder-slate-700 font-mono text-xs focus:outline-none focus:border-indigo-500 transition"
-                          />
-                        </div>
-                        
-                        <div className="col-span-3">
-                          <input
-                            type="text"
-                            value={header.value}
-                            onChange={(e) => handleUpdateHeader(header.id, 'value', e.target.value)}
-                            placeholder="Value"
-                            list="common-header-values"
-                            className="w-full bg-slate-950 border border-slate-850/85 rounded px-2 py-1 text-slate-300 placeholder-slate-700 font-mono text-xs focus:outline-none focus:border-indigo-500 transition"
-                          />
-                        </div>
-                        
-                        <div className="col-span-4">
-                          <input
-                            type="text"
-                            value={header.description || ''}
-                            onChange={(e) => handleUpdateHeader(header.id, 'description', e.target.value)}
-                            placeholder="Description"
-                            className="w-full bg-slate-950 border border-slate-850/85 rounded px-2 py-1 text-slate-350 placeholder-slate-700 font-mono text-xs focus:outline-none focus:border-indigo-500 transition"
-                          />
-                        </div>
-                        
-                        <div className="col-span-1 flex items-center justify-center">
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteHeader(header.id)}
-                            className="text-slate-500 hover:text-rose-400 p-1 rounded transition duration-150 hover:bg-rose-950/20 active:scale-95 cursor-pointer"
-                            title="Delete Header"
-                          >
-                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                            </svg>
-                          </button>
-                        </div>
-                      </div>
-                    ))}
+                      ))}
+                    </div>
                   </div>
                 </div>
               )}
@@ -763,7 +784,7 @@ export default function RequestEditor({
             <div className="space-y-3">
               {/* Header bar: Body Type Selector + Actions */}
               <div className="flex flex-wrap items-center justify-between gap-2 pb-1">
-                <div className="flex items-center space-x-1 bg-slate-950 border border-slate-800 rounded-lg p-0.5">
+                <div className="flex items-center space-x-1 bg-slate-950 border border-slate-800 rounded-lg p-0.5 overflow-x-auto max-w-full no-scrollbar">
                   {(
                     [
                       { id: 'none', label: 'None' },
@@ -777,7 +798,7 @@ export default function RequestEditor({
                       key={type.id}
                       type="button"
                       onClick={() => setBodyType(type.id)}
-                      className={`px-3 py-1 rounded-md text-xs font-semibold transition cursor-pointer ${
+                      className={`px-3 py-1 rounded-md text-xs font-semibold transition cursor-pointer shrink-0 whitespace-nowrap ${
                         bodyType === type.id
                           ? 'bg-indigo-600 text-white shadow-sm'
                           : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60'
@@ -941,76 +962,78 @@ export default function RequestEditor({
                       No form-urlencoded fields defined. Click "Add Field" to start.
                     </div>
                   ) : (
-                    <div className="border border-slate-800/80 rounded-lg overflow-hidden bg-slate-950/20">
-                      <div className="grid grid-cols-12 gap-2 border-b border-slate-850 p-2 bg-slate-900/20 text-[10px] font-bold uppercase tracking-wider text-slate-450 font-mono">
-                        <div className="col-span-1 text-center">Active</div>
-                        <div className="col-span-3">Key</div>
-                        <div className="col-span-3">Value</div>
-                        <div className="col-span-4">Description</div>
-                        <div className="col-span-1 text-center">Delete</div>
-                      </div>
+                    <div className="border border-slate-800/80 rounded-lg overflow-x-auto bg-slate-950/20">
+                      <div className="min-w-[500px]">
+                        <div className="grid grid-cols-12 gap-2 border-b border-slate-850 p-2 bg-slate-900/20 text-[10px] font-bold uppercase tracking-wider text-slate-450 font-mono">
+                          <div className="col-span-1 text-center">Active</div>
+                          <div className="col-span-3">Key</div>
+                          <div className="col-span-3">Value</div>
+                          <div className="col-span-4">Description</div>
+                          <div className="col-span-1 text-center">Delete</div>
+                        </div>
 
-                      <div className="divide-y divide-slate-850/80">
-                        {formUrlEncoded.map((field) => (
-                          <div
-                            key={field.id}
-                            className={`grid grid-cols-12 gap-2 items-center p-2 hover:bg-slate-900/10 transition duration-150 ${
-                              !field.enabled ? 'opacity-55' : ''
-                            }`}
-                          >
-                            <div className="col-span-1 flex items-center justify-center">
-                              <input
-                                type="checkbox"
-                                checked={field.enabled}
-                                onChange={(e) => handleToggleFormUrlEncoded(field.id, e.target.checked)}
-                                className="w-3.5 h-3.5 rounded border-slate-800 text-indigo-600 bg-slate-950 focus:ring-indigo-500/30 cursor-pointer focus:ring-offset-0 focus:outline-none"
-                              />
-                            </div>
+                        <div className="divide-y divide-slate-850/80">
+                          {formUrlEncoded.map((field) => (
+                            <div
+                              key={field.id}
+                              className={`grid grid-cols-12 gap-2 items-center p-2 hover:bg-slate-900/10 transition duration-150 ${
+                                !field.enabled ? 'opacity-55' : ''
+                              }`}
+                            >
+                              <div className="col-span-1 flex items-center justify-center">
+                                <input
+                                  type="checkbox"
+                                  checked={field.enabled}
+                                  onChange={(e) => handleToggleFormUrlEncoded(field.id, e.target.checked)}
+                                  className="w-3.5 h-3.5 rounded border-slate-800 text-indigo-600 bg-slate-950 focus:ring-indigo-500/30 cursor-pointer focus:ring-offset-0 focus:outline-none"
+                                />
+                              </div>
 
-                            <div className="col-span-3">
-                              <input
-                                type="text"
-                                value={field.key}
-                                onChange={(e) => handleUpdateFormUrlEncoded(field.id, 'key', e.target.value)}
-                                placeholder="Key"
-                                className="w-full bg-slate-950 border border-slate-850/85 rounded px-2 py-1 text-slate-300 placeholder-slate-700 font-mono text-xs focus:outline-none focus:border-indigo-500 transition"
-                              />
-                            </div>
+                              <div className="col-span-3">
+                                <input
+                                  type="text"
+                                  value={field.key}
+                                  onChange={(e) => handleUpdateFormUrlEncoded(field.id, 'key', e.target.value)}
+                                  placeholder="Key"
+                                  className="w-full bg-slate-950 border border-slate-850/85 rounded px-2 py-1 text-slate-300 placeholder-slate-700 font-mono text-xs focus:outline-none focus:border-indigo-500 transition"
+                                />
+                              </div>
 
-                            <div className="col-span-3">
-                              <input
-                                type="text"
-                                value={field.value}
-                                onChange={(e) => handleUpdateFormUrlEncoded(field.id, 'value', e.target.value)}
-                                placeholder="Value"
-                                className="w-full bg-slate-950 border border-slate-850/85 rounded px-2 py-1 text-slate-300 placeholder-slate-700 font-mono text-xs focus:outline-none focus:border-indigo-500 transition"
-                              />
-                            </div>
+                              <div className="col-span-3">
+                                <input
+                                  type="text"
+                                  value={field.value}
+                                  onChange={(e) => handleUpdateFormUrlEncoded(field.id, 'value', e.target.value)}
+                                  placeholder="Value"
+                                  className="w-full bg-slate-950 border border-slate-850/85 rounded px-2 py-1 text-slate-300 placeholder-slate-700 font-mono text-xs focus:outline-none focus:border-indigo-500 transition"
+                                />
+                              </div>
 
-                            <div className="col-span-4">
-                              <input
-                                type="text"
-                                value={field.description || ''}
-                                onChange={(e) => handleUpdateFormUrlEncoded(field.id, 'description', e.target.value)}
-                                placeholder="Description"
-                                className="w-full bg-slate-950 border border-slate-850/85 rounded px-2 py-1 text-slate-350 placeholder-slate-700 font-mono text-xs focus:outline-none focus:border-indigo-500 transition"
-                              />
-                            </div>
+                              <div className="col-span-4">
+                                <input
+                                  type="text"
+                                  value={field.description || ''}
+                                  onChange={(e) => handleUpdateFormUrlEncoded(field.id, 'description', e.target.value)}
+                                  placeholder="Description"
+                                  className="w-full bg-slate-950 border border-slate-850/85 rounded px-2 py-1 text-slate-350 placeholder-slate-700 font-mono text-xs focus:outline-none focus:border-indigo-500 transition"
+                                />
+                              </div>
 
-                            <div className="col-span-1 flex items-center justify-center">
-                              <button
-                                type="button"
-                                onClick={() => handleDeleteFormUrlEncoded(field.id)}
-                                className="text-slate-500 hover:text-rose-400 p-1 rounded transition duration-150 hover:bg-rose-950/20 active:scale-95 cursor-pointer"
-                                title="Delete Field"
-                              >
-                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                </svg>
-                              </button>
+                              <div className="col-span-1 flex items-center justify-center">
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteFormUrlEncoded(field.id)}
+                                  className="text-slate-500 hover:text-rose-400 p-1 rounded transition duration-150 hover:bg-rose-950/20 active:scale-95 cursor-pointer"
+                                  title="Delete Field"
+                                >
+                                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                  </svg>
+                                </button>
+                              </div>
                             </div>
-                          </div>
-                        ))}
+                          ))}
+                        </div>
                       </div>
                     </div>
                   )}
@@ -1054,76 +1077,78 @@ export default function RequestEditor({
                       No multipart fields defined. Click "Add Field" to start.
                     </div>
                   ) : (
-                    <div className="border border-slate-800/80 rounded-lg overflow-hidden bg-slate-950/20">
-                      <div className="grid grid-cols-12 gap-2 border-b border-slate-850 p-2 bg-slate-900/20 text-[10px] font-bold uppercase tracking-wider text-slate-450 font-mono">
-                        <div className="col-span-1 text-center">Active</div>
-                        <div className="col-span-3">Key (Field Name)</div>
-                        <div className="col-span-3">Value (Text)</div>
-                        <div className="col-span-4">Description</div>
-                        <div className="col-span-1 text-center">Delete</div>
-                      </div>
+                    <div className="border border-slate-800/80 rounded-lg overflow-x-auto bg-slate-950/20">
+                      <div className="min-w-[500px]">
+                        <div className="grid grid-cols-12 gap-2 border-b border-slate-850 p-2 bg-slate-900/20 text-[10px] font-bold uppercase tracking-wider text-slate-450 font-mono">
+                          <div className="col-span-1 text-center">Active</div>
+                          <div className="col-span-3">Key (Field Name)</div>
+                          <div className="col-span-3">Value (Text)</div>
+                          <div className="col-span-4">Description</div>
+                          <div className="col-span-1 text-center">Delete</div>
+                        </div>
 
-                      <div className="divide-y divide-slate-850/80">
-                        {multipartFormData.map((field) => (
-                          <div
-                            key={field.id}
-                            className={`grid grid-cols-12 gap-2 items-center p-2 hover:bg-slate-900/10 transition duration-150 ${
-                              !field.enabled ? 'opacity-55' : ''
-                            }`}
-                          >
-                            <div className="col-span-1 flex items-center justify-center">
-                              <input
-                                type="checkbox"
-                                checked={field.enabled}
-                                onChange={(e) => handleToggleMultipart(field.id, e.target.checked)}
-                                className="w-3.5 h-3.5 rounded border-slate-800 text-indigo-600 bg-slate-950 focus:ring-indigo-500/30 cursor-pointer focus:ring-offset-0 focus:outline-none"
-                              />
-                            </div>
+                        <div className="divide-y divide-slate-850/80">
+                          {multipartFormData.map((field) => (
+                            <div
+                              key={field.id}
+                              className={`grid grid-cols-12 gap-2 items-center p-2 hover:bg-slate-900/10 transition duration-150 ${
+                                !field.enabled ? 'opacity-55' : ''
+                              }`}
+                            >
+                              <div className="col-span-1 flex items-center justify-center">
+                                <input
+                                  type="checkbox"
+                                  checked={field.enabled}
+                                  onChange={(e) => handleToggleMultipart(field.id, e.target.checked)}
+                                  className="w-3.5 h-3.5 rounded border-slate-800 text-indigo-600 bg-slate-950 focus:ring-indigo-500/30 cursor-pointer focus:ring-offset-0 focus:outline-none"
+                                />
+                              </div>
 
-                            <div className="col-span-3">
-                              <input
-                                type="text"
-                                value={field.key}
-                                onChange={(e) => handleUpdateMultipart(field.id, 'key', e.target.value)}
-                                placeholder="Key"
-                                className="w-full bg-slate-950 border border-slate-850/85 rounded px-2 py-1 text-slate-300 placeholder-slate-700 font-mono text-xs focus:outline-none focus:border-indigo-500 transition"
-                              />
-                            </div>
+                              <div className="col-span-3">
+                                <input
+                                  type="text"
+                                  value={field.key}
+                                  onChange={(e) => handleUpdateMultipart(field.id, 'key', e.target.value)}
+                                  placeholder="Key"
+                                  className="w-full bg-slate-950 border border-slate-850/85 rounded px-2 py-1 text-slate-300 placeholder-slate-700 font-mono text-xs focus:outline-none focus:border-indigo-500 transition"
+                                />
+                              </div>
 
-                            <div className="col-span-3">
-                              <input
-                                type="text"
-                                value={field.value}
-                                onChange={(e) => handleUpdateMultipart(field.id, 'value', e.target.value)}
-                                placeholder="Text Value"
-                                className="w-full bg-slate-950 border border-slate-850/85 rounded px-2 py-1 text-slate-300 placeholder-slate-700 font-mono text-xs focus:outline-none focus:border-indigo-500 transition"
-                              />
-                            </div>
+                              <div className="col-span-3">
+                                <input
+                                  type="text"
+                                  value={field.value}
+                                  onChange={(e) => handleUpdateMultipart(field.id, 'value', e.target.value)}
+                                  placeholder="Text Value"
+                                  className="w-full bg-slate-950 border border-slate-850/85 rounded px-2 py-1 text-slate-300 placeholder-slate-700 font-mono text-xs focus:outline-none focus:border-indigo-500 transition"
+                                />
+                              </div>
 
-                            <div className="col-span-4">
-                              <input
-                                type="text"
-                                value={field.description || ''}
-                                onChange={(e) => handleUpdateMultipart(field.id, 'description', e.target.value)}
-                                placeholder="Description"
-                                className="w-full bg-slate-950 border border-slate-850/85 rounded px-2 py-1 text-slate-350 placeholder-slate-700 font-mono text-xs focus:outline-none focus:border-indigo-500 transition"
-                              />
-                            </div>
+                              <div className="col-span-4">
+                                <input
+                                  type="text"
+                                  value={field.description || ''}
+                                  onChange={(e) => handleUpdateMultipart(field.id, 'description', e.target.value)}
+                                  placeholder="Description"
+                                  className="w-full bg-slate-950 border border-slate-850/85 rounded px-2 py-1 text-slate-350 placeholder-slate-700 font-mono text-xs focus:outline-none focus:border-indigo-500 transition"
+                                />
+                              </div>
 
-                            <div className="col-span-1 flex items-center justify-center">
-                              <button
-                                type="button"
-                                onClick={() => handleDeleteMultipart(field.id)}
-                                className="text-slate-500 hover:text-rose-400 p-1 rounded transition duration-150 hover:bg-rose-950/20 active:scale-95 cursor-pointer"
-                                title="Delete Field"
-                              >
-                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                </svg>
-                              </button>
+                              <div className="col-span-1 flex items-center justify-center">
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteMultipart(field.id)}
+                                  className="text-slate-500 hover:text-rose-400 p-1 rounded transition duration-150 hover:bg-rose-950/20 active:scale-95 cursor-pointer"
+                                  title="Delete Field"
+                                >
+                                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                  </svg>
+                                </button>
+                              </div>
                             </div>
-                          </div>
-                        ))}
+                          ))}
+                        </div>
                       </div>
                     </div>
                   )}

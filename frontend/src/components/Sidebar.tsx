@@ -160,7 +160,7 @@ function FolderTreeItem({
             className={`p-1 rounded text-slate-400 hover:text-slate-100 hover:bg-slate-700/80 transition cursor-pointer ${
               isFolderMenuOpen
                 ? 'opacity-100 bg-slate-700 text-slate-100 ring-1 ring-slate-600'
-                : 'opacity-0 group-hover/folder:opacity-100 focus:opacity-100'
+                : 'opacity-100 sm:opacity-0 sm:group-hover/folder:opacity-100 focus:opacity-100'
             }`}
             title="Folder options"
             aria-label={`Options for folder ${folder.name}`}
@@ -352,7 +352,7 @@ function FolderTreeItem({
                     className={`p-1 rounded text-slate-400 hover:text-slate-100 hover:bg-slate-700/80 transition cursor-pointer ${
                       isReqMenuOpen
                         ? 'opacity-100 bg-slate-700 text-slate-100 ring-1 ring-slate-600'
-                        : 'opacity-0 group-hover/req:opacity-100 focus:opacity-100'
+                        : 'opacity-100 sm:opacity-0 sm:group-hover/req:opacity-100 focus:opacity-100'
                     }`}
                     title="Request options"
                     aria-label={`Options for request ${req.name}`}
@@ -542,7 +542,7 @@ export default function Sidebar({
   };
 
   return (
-    <aside className="w-64 border-r border-slate-800 bg-slate-900/60 backdrop-blur-sm flex flex-col h-full app-height shrink-0 overflow-hidden">
+    <aside className="w-full sm:w-64 border-r border-slate-800 bg-slate-900/60 backdrop-blur-sm flex flex-col h-full sm:app-height shrink-0 overflow-hidden">
       {/* New Request Button */}
       <div className="p-3 shrink-0">
         <button
@@ -656,7 +656,7 @@ export default function Sidebar({
                           className={`p-1 rounded text-slate-400 hover:text-slate-100 hover:bg-slate-700/80 transition cursor-pointer ${
                             isColMenuOpen
                               ? 'opacity-100 bg-slate-700 text-slate-100 ring-1 ring-slate-600'
-                              : 'opacity-0 group-hover/col:opacity-100 focus:opacity-100'
+                              : 'opacity-100 sm:opacity-0 sm:group-hover/col:opacity-100 focus:opacity-100'
                           }`}
                           title="Collection options"
                           aria-label={`Options for collection ${col.name}`}
@@ -832,7 +832,7 @@ export default function Sidebar({
                                   className={`p-1 rounded text-slate-400 hover:text-slate-100 hover:bg-slate-700/80 transition cursor-pointer ${
                                     isReqMenuOpen
                                       ? 'opacity-100 bg-slate-700 text-slate-100 ring-1 ring-slate-600'
-                                      : 'opacity-0 group-hover/req:opacity-100 focus:opacity-100'
+                                      : 'opacity-100 sm:opacity-0 sm:group-hover/req:opacity-100 focus:opacity-100'
                                   }`}
                                   title="Request options"
                                   aria-label={`Options for request ${req.name}`}
@@ -1054,7 +1054,7 @@ export default function Sidebar({
                           <button
                             type="button"
                             onClick={(e) => onDeleteHistoryItem(item.id, e)}
-                            className="opacity-0 group-hover:opacity-100 p-0.5 text-slate-500 hover:text-rose-400 hover:bg-rose-950/40 rounded transition cursor-pointer shrink-0"
+                            className="opacity-100 sm:opacity-0 sm:group-hover:opacity-100 p-0.5 text-slate-500 hover:text-rose-400 hover:bg-rose-950/40 rounded transition cursor-pointer shrink-0"
                             title="Delete history item"
                             aria-label="Delete history item"
                           >

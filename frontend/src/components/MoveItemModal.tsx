@@ -162,14 +162,14 @@ function MoveItemModalContent({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-fade-in"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-2 sm:p-4 animate-fade-in"
       onKeyDown={handleKeyDown}
     >
-      <div className="bg-slate-900 border border-slate-800 rounded-xl shadow-2xl max-w-lg w-full overflow-hidden">
+      <div className="bg-slate-900 border border-slate-800 rounded-xl shadow-2xl max-w-lg w-full overflow-hidden max-h-[90vh] flex flex-col">
         {/* Header */}
-        <div className="px-5 py-4 border-b border-slate-800 flex items-center justify-between">
-          <div className="flex items-center space-x-2.5">
-            <div className="w-6 h-6 rounded-md bg-indigo-600/20 text-indigo-400 flex items-center justify-center">
+        <div className="px-4 sm:px-5 py-3 sm:py-4 border-b border-slate-800 flex items-center justify-between shrink-0">
+          <div className="flex items-center space-x-2.5 min-w-0">
+            <div className="w-6 h-6 rounded-md bg-indigo-600/20 text-indigo-400 flex items-center justify-center shrink-0">
               <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path
                   strokeLinecap="round"
@@ -179,11 +179,11 @@ function MoveItemModalContent({
                 />
               </svg>
             </div>
-            <div>
-              <h3 className="text-sm font-bold text-slate-100">
+            <div className="min-w-0">
+              <h3 className="text-sm font-bold text-slate-100 truncate">
                 {isRequest ? 'Move Saved Request' : 'Move Folder'}
               </h3>
-              <p className="text-[11px] text-slate-400">
+              <p className="text-[11px] text-slate-400 truncate">
                 Moving <span className="text-indigo-300 font-semibold">{isRequest ? target.request.name : target.folder.name}</span>
               </p>
             </div>
@@ -191,7 +191,7 @@ function MoveItemModalContent({
           <button
             type="button"
             onClick={onClose}
-            className="text-slate-500 hover:text-slate-300 p-1 rounded-lg hover:bg-slate-800 transition cursor-pointer"
+            className="text-slate-500 hover:text-slate-300 p-1 rounded-lg hover:bg-slate-800 transition cursor-pointer shrink-0 ml-2"
           >
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -200,7 +200,7 @@ function MoveItemModalContent({
         </div>
 
         {/* Body */}
-        <form onSubmit={handleSubmit} className="p-5 space-y-4">
+        <form onSubmit={handleSubmit} className="p-4 sm:p-5 space-y-4 overflow-y-auto flex-1">
           <div>
             <label className="block text-xs font-semibold text-slate-300 mb-1.5">
               Select Destination Location

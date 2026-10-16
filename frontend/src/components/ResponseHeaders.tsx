@@ -126,7 +126,7 @@ export default function ResponseHeaders({ headers }: ResponseHeadersProps) {
               <button
                 type="button"
                 onClick={() => handleCopyValue(key, val)}
-                className="opacity-0 group-hover:opacity-100 bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-slate-200 border border-slate-750 px-1.5 py-0.5 rounded text-[11px] transition cursor-pointer shrink-0"
+                className="opacity-100 sm:opacity-0 sm:group-hover:opacity-100 bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-slate-200 border border-slate-750 px-1.5 py-0.5 rounded text-[11px] transition cursor-pointer shrink-0"
                 title={`Copy value of ${key}`}
               >
                 {copiedKey === key ? (

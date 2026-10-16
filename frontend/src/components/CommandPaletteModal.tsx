@@ -395,12 +395,12 @@ function CommandPaletteModalContent({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center pt-16 sm:pt-24 bg-black/70 backdrop-blur-xs p-4 animate-fade-in"
+      className="fixed inset-0 z-50 flex items-start justify-center pt-4 sm:pt-24 bg-black/70 backdrop-blur-xs p-2 sm:p-4 animate-fade-in"
       onClick={onClose}
       onKeyDown={handleKeyDown}
     >
       <div
-        className="bg-slate-900 border border-slate-800 rounded-xl shadow-2xl max-w-xl w-full overflow-hidden flex flex-col max-h-[75vh]"
+        className="bg-slate-900 border border-slate-800 rounded-xl shadow-2xl max-w-xl w-full overflow-hidden flex flex-col max-h-[85vh]"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Search Header */}
@@ -591,8 +591,8 @@ function CommandPaletteModalContent({
         </div>
 
         {/* Footer Shortcut Hints */}
-        <div className="border-t border-slate-800 bg-slate-950/60 px-4 py-2 flex items-center justify-between text-[10px] text-slate-500 shrink-0">
-          <div className="flex items-center space-x-3">
+        <div className="border-t border-slate-800 bg-slate-950/60 px-3 sm:px-4 py-2 flex flex-wrap items-center justify-between gap-1.5 text-[10px] text-slate-500 shrink-0">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
             <span className="flex items-center space-x-1">
               <kbd className="bg-slate-850 border border-slate-750 px-1 py-0.2 rounded text-[9px] font-mono text-slate-400">↑</kbd>
               <kbd className="bg-slate-850 border border-slate-750 px-1 py-0.2 rounded text-[9px] font-mono text-slate-400">↓</kbd>

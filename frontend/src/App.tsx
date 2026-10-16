@@ -1204,20 +1204,21 @@ function AuthenticatedWorkspace({ user, onSignOut }: AuthenticatedWorkspaceProps
       {/* Centered Workspace layout */}
       <div className="max-w-5xl w-full mx-auto flex flex-col space-y-4 min-h-full pb-10">
         {/* Workspace status bar */}
-        <div className="bg-slate-900/40 border border-slate-850 px-4 py-2 rounded-lg flex items-center justify-between text-xs text-slate-400">
-          <div className="flex items-center space-x-2">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+        <div className="bg-slate-900/40 border border-slate-850 px-3 sm:px-4 py-2 rounded-lg flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1.5 text-xs text-slate-400">
+          <div className="flex flex-wrap items-center gap-1.5 min-w-0">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0" />
             <span className="font-semibold text-slate-300">Status: Backend Engine Active</span>
             {activeEnvironment && (
-              <span className="text-[10px] font-mono bg-indigo-950/60 text-indigo-300 border border-indigo-800/40 px-2 py-0.5 rounded-full ml-2">
+              <span className="text-[10px] font-mono bg-indigo-950/60 text-indigo-300 border border-indigo-800/40 px-2 py-0.5 rounded-full">
                 Env: {activeEnvironment.name}
               </span>
             )}
           </div>
-          <div className="flex items-center space-x-2">
+          <div className="flex items-center space-x-2 shrink-0">
             <span className="text-[10px] text-indigo-350 font-mono flex items-center space-x-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-              <span>Cloud Sync: Collections, Folders & Environments Active</span>
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
+              <span className="hidden sm:inline">Cloud Sync: Collections, Folders & Environments Active</span>
+              <span className="sm:hidden">Cloud Sync: Active</span>
             </span>
           </div>
         </div>

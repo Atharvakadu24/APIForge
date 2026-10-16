@@ -11,6 +11,8 @@ interface HeaderProps {
   onOpenCommandPalette?: () => void;
   user?: User | null;
   onSignOut?: () => void;
+  isMobileSidebarOpen?: boolean;
+  onToggleMobileSidebar?: () => void;
 }
 
 export default function Header({
@@ -21,6 +23,8 @@ export default function Header({
   onOpenCommandPalette,
   user = null,
   onSignOut,
+  isMobileSidebarOpen = false,
+  onToggleMobileSidebar,
 }: HeaderProps) {
   const [isEnvDropdownOpen, setIsEnvDropdownOpen] = useState(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
@@ -64,26 +68,45 @@ export default function Header({
   const userInitials = getUserInitials(user?.email);
 
   return (
-    <header className="h-12 border-b border-slate-800 bg-slate-900 px-4 flex items-center justify-between shrink-0 z-50">
-      {/* Left section: Logo & Workspace */}
-      <div className="flex items-center space-x-4">
-        <BrandLogo size="sm" />
+    <header className="h-12 border-b border-slate-800 bg-slate-900 px-3 sm:px-4 flex items-center justify-between shrink-0 z-50">
+      {/* Left section: Mobile Menu Button, Logo & Workspace */}
+      <div className="flex items-center space-x-2 sm:space-x-4 min-w-0">
+        {/* Mobile Hamburger Drawer Toggle */}
+        <button
+          type="button"
+          onClick={onToggleMobileSidebar}
+          className="sm:hidden p-1.5 -ml-1 text-slate-400 hover:text-slate-100 hover:bg-slate-800 rounded-lg transition cursor-pointer"
+          aria-label={isMobileSidebarOpen ? 'Close navigation menu' : 'Open navigation menu'}
+          title={isMobileSidebarOpen ? 'Close menu' : 'Open menu'}
+        >
+          {isMobileSidebarOpen ? (
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          ) : (
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+            </svg>
+          )}
+        </button>
 
-        <div className="h-4 w-px bg-slate-800" />
+        <BrandLogo size="sm" wordmarkClassName="hidden xs:inline" />
 
-        {/* Workspace selector */}
-        <div className="flex items-center space-x-1.5 cursor-pointer hover:bg-slate-800 px-2 py-1 rounded transition text-xs text-slate-300 font-medium">
-          <svg className="w-3.5 h-3.5 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <div className="hidden sm:block h-4 w-px bg-slate-800" />
+
+        {/* Workspace selector - hidden on mobile, visible on sm and up */}
+        <div className="hidden sm:flex items-center space-x-1.5 cursor-pointer hover:bg-slate-800 px-2 py-1 rounded transition text-xs text-slate-300 font-medium">
+          <svg className="w-3.5 h-3.5 text-indigo-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
           </svg>
-          <span>Personal Workspace</span>
-          <svg className="w-3 h-3 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <span className="truncate max-w-[140px]">Personal Workspace</span>
+          <svg className="w-3 h-3 text-slate-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
           </svg>
         </div>
       </div>
 
-      {/* Middle section: Search placeholder / Command Palette trigger */}
+      {/* Middle section: Search placeholder / Command Palette trigger (Desktop) */}
       <div className="hidden md:flex items-center max-w-sm w-80">
         <button
           type="button"
@@ -102,21 +125,36 @@ export default function Header({
         </button>
       </div>
 
-      {/* Right section: Environment Selector & User Profile */}
-      <div className="flex items-center space-x-3">
+      {/* Right section: Mobile Search Trigger, Environment Selector & User Profile */}
+      <div className="flex items-center space-x-1.5 sm:space-x-3 shrink-0">
+        {/* Mobile Search Button (md:hidden) */}
+        {onOpenCommandPalette && (
+          <button
+            type="button"
+            onClick={onOpenCommandPalette}
+            className="md:hidden p-1.5 text-slate-400 hover:text-slate-100 hover:bg-slate-800 rounded-lg transition cursor-pointer"
+            title="Search requests or docs (Ctrl+K)"
+            aria-label="Open command search"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+          </button>
+        )}
+
         {/* Environment Selector Dropdown */}
         <div className="relative" ref={envDropdownRef}>
           <div className="flex items-center bg-slate-950 border border-slate-800 rounded-lg p-0.5">
             <button
               type="button"
               onClick={() => setIsEnvDropdownOpen(!isEnvDropdownOpen)}
-              className="flex items-center space-x-2 px-2.5 py-1 rounded text-xs text-slate-300 hover:text-slate-100 hover:bg-slate-850/80 transition cursor-pointer"
+              className="flex items-center space-x-1.5 sm:space-x-2 px-2 sm:px-2.5 py-1 rounded text-xs text-slate-300 hover:text-slate-100 hover:bg-slate-850/80 transition cursor-pointer"
             >
-              <span className={`w-2 h-2 rounded-full ${activeEnv ? 'bg-emerald-400 shadow-xs shadow-emerald-400/50' : 'bg-slate-600'}`} />
-              <span className="font-medium max-w-[120px] truncate">
-                {activeEnv ? activeEnv.name : 'No Environment'}
+              <span className={`w-2 h-2 rounded-full shrink-0 ${activeEnv ? 'bg-emerald-400 shadow-xs shadow-emerald-400/50' : 'bg-slate-600'}`} />
+              <span className="font-medium max-w-[70px] xs:max-w-[100px] sm:max-w-[120px] truncate">
+                {activeEnv ? activeEnv.name : 'No Env'}
               </span>
-              <svg className="w-3 h-3 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <svg className="w-3 h-3 text-slate-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
               </svg>
             </button>

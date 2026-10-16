@@ -41,7 +41,7 @@ function CodeSnippetModalContent({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-xs p-4 animate-fade-in"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-xs p-2 sm:p-4 animate-fade-in"
       onClick={onClose}
       onKeyDown={handleKeyDown}
     >
@@ -50,16 +50,16 @@ function CodeSnippetModalContent({
         onClick={(e) => e.stopPropagation()}
       >
         {/* Modal Header */}
-        <div className="px-5 py-3.5 border-b border-slate-800 flex items-center justify-between bg-slate-900/90 shrink-0">
-          <div className="flex items-center space-x-2.5">
-            <div className="w-6 h-6 rounded-md bg-indigo-600/20 text-indigo-400 flex items-center justify-center">
+        <div className="px-4 sm:px-5 py-3 sm:py-3.5 border-b border-slate-800 flex items-center justify-between bg-slate-900/90 shrink-0">
+          <div className="flex items-center space-x-2.5 min-w-0">
+            <div className="w-6 h-6 rounded-md bg-indigo-600/20 text-indigo-400 flex items-center justify-center shrink-0">
               <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
               </svg>
             </div>
-            <div>
+            <div className="min-w-0">
               <h3 className="text-sm font-bold text-slate-100">Generate Code</h3>
-              <p className="text-[10px] text-slate-500 font-mono">
+              <p className="text-[10px] text-slate-500 font-mono truncate">
                 {request.method} {request.url || 'https://api.example.com'}
               </p>
             </div>
@@ -68,7 +68,7 @@ function CodeSnippetModalContent({
           <button
             type="button"
             onClick={onClose}
-            className="text-slate-500 hover:text-slate-300 p-1 rounded-lg hover:bg-slate-800 transition cursor-pointer"
+            className="text-slate-500 hover:text-slate-300 p-1 rounded-lg hover:bg-slate-800 transition cursor-pointer shrink-0 ml-2"
             title="Close modal (Esc)"
           >
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -78,15 +78,15 @@ function CodeSnippetModalContent({
         </div>
 
         {/* Language Tabs & Action Bar */}
-        <div className="px-5 py-2.5 bg-slate-950/60 border-b border-slate-850 flex flex-wrap items-center justify-between gap-2 shrink-0">
+        <div className="px-3 sm:px-5 py-2.5 bg-slate-950/60 border-b border-slate-850 flex flex-wrap items-center justify-between gap-2 shrink-0">
           {/* Language Tabs */}
-          <div className="flex items-center space-x-1 bg-slate-950 border border-slate-800 rounded-lg p-0.5">
+          <div className="flex items-center space-x-1 bg-slate-950 border border-slate-800 rounded-lg p-0.5 overflow-x-auto max-w-full no-scrollbar">
             {SUPPORTED_LANGUAGES.map((lang) => (
               <button
                 key={lang.id}
                 type="button"
                 onClick={() => setSelectedLanguage(lang.id)}
-                className={`px-3 py-1 rounded-md text-xs font-semibold transition cursor-pointer ${
+                className={`px-3 py-1 rounded-md text-xs font-semibold transition cursor-pointer shrink-0 whitespace-nowrap ${
                   selectedLanguage === lang.id
                     ? 'bg-indigo-600 text-white shadow-sm'
                     : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60'
@@ -101,7 +101,7 @@ function CodeSnippetModalContent({
           <button
             type="button"
             onClick={handleCopy}
-            className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center space-x-1.5 transition duration-150 active:scale-95 cursor-pointer border ${
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center space-x-1.5 transition duration-150 active:scale-95 cursor-pointer border shrink-0 ${
               copied
                 ? 'bg-emerald-950/80 text-emerald-400 border-emerald-800/60'
                 : 'bg-slate-800 hover:bg-slate-750 text-slate-200 border-slate-700/80 hover:text-white'
@@ -126,23 +126,23 @@ function CodeSnippetModalContent({
         </div>
 
         {/* Code Content Area */}
-        <div className="p-4 flex-1 overflow-y-auto bg-slate-950/80 font-mono text-xs">
+        <div className="p-3 sm:p-4 flex-1 overflow-y-auto bg-slate-950/80 font-mono text-xs">
           <pre className="text-slate-200 leading-relaxed overflow-x-auto selection:bg-indigo-500/30 selection:text-indigo-200">
             <code>{snippet}</code>
           </pre>
         </div>
 
         {/* Modal Footer */}
-        <div className="px-5 py-2.5 border-t border-slate-800 bg-slate-900 flex items-center justify-between text-[11px] text-slate-500 shrink-0">
+        <div className="px-4 sm:px-5 py-2.5 border-t border-slate-800 bg-slate-900 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-[11px] text-slate-500 shrink-0">
           <div className="flex items-center space-x-2">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-            <span>Environment placeholders like <code className="text-indigo-300">{"{{variable}}"}</code> are preserved for secret safety</span>
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
+            <span className="text-[10px] sm:text-[11px]">Environment placeholders like <code className="text-indigo-300">{"{{variable}}"}</code> are preserved</span>
           </div>
 
           <button
             type="button"
             onClick={onClose}
-            className="px-3 py-1 bg-slate-800 hover:bg-slate-750 text-slate-300 rounded-md text-xs font-medium transition cursor-pointer border border-slate-700/60"
+            className="w-full sm:w-auto px-3 py-1 bg-slate-800 hover:bg-slate-750 text-slate-300 rounded-md text-xs font-medium transition cursor-pointer border border-slate-700/60 text-center"
           >
             Close
           </button>
